@@ -16,7 +16,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from pydantic import BaseModel
 from typing import List, Dict
 from src.app.services.azure_open_ai import model
-from langgraph_checkpoint_cosmosdb import CosmosDBSaver
+from langgraph_checkpoint_cosmosdb_local import CosmosDBSaver
 from langgraph.graph.state import CompiledStateGraph
 from starlette.middleware.cors import CORSMiddleware
 from src.app.banking_agents import graph, checkpointer
@@ -26,6 +26,11 @@ from src.app.services.azure_cosmos_db import update_chat_container, patch_active
     update_account_container, update_offers_container, store_chat_history, update_active_agent_in_latest_message, \
     chat_container, fetch_chat_history_by_session, delete_chat_history_by_session
 import logging
+
+import asyncio
+from src.app.banking_agents import setup_agents
+
+
 
 # Setup logging
 logging.basicConfig(level=logging.ERROR)
@@ -53,6 +58,13 @@ def get_compiled_graph():
 
 app = fastapi.FastAPI(title="Cosmos DB Multi-Agent Banking API", openapi_url="/cosmos-multi-agent-api.json")
 
+@app.on_event("startup")
+async def initialize_agents():
+    await setup_agents()
+
+@app.get("/")
+def health_check():
+    return {"status": "MCP agent system is up"}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -533,7 +545,7 @@ async def get_chat_completion(
     if not checkpoints:
         # No previous state, start fresh
         new_state = {"messages": [{"role": "user", "content": request_body}]}
-        response_data = workflow.invoke(new_state, config, stream_mode="updates")
+        response_data = await workflow.ainvoke(new_state, config, stream_mode="updates")
     else:
         # Resume from last checkpoint
         last_checkpoint = checkpoints[-1]
@@ -551,7 +563,7 @@ async def get_chat_completion(
                     break
 
         last_state["langgraph_triggers"] = [f"resume:{last_active_agent}"]
-        response_data = workflow.invoke(last_state, config, stream_mode="updates")
+        response_data = await workflow.ainvoke(last_state, config, stream_mode="updates")
 
     debug_log_id = store_debug_log(sessionId, tenantId, userId, response_data)
 

@@ -7,9 +7,22 @@ from langsmith import traceable
 from src.app.services.azure_cosmos_db import vector_search, create_account_record, \
     fetch_latest_account_number
 from src.app.services.azure_open_ai import generate_embedding
+from mcp.server.fastmcp import FastMCP
+
+from fastapi import FastAPI
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("SalesTools")
+
+import sys
+import os
+
+# Add the project root to sys.path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
 
 
-@tool
+@mcp.tool()
 @traceable
 def get_offer_information(user_prompt: str, accountType: str) -> list[dict[str, Any]]:
     """Provide information about a product based on the user prompt.
@@ -20,7 +33,7 @@ def get_offer_information(user_prompt: str, accountType: str) -> list[dict[str, 
     return search_results
 
 
-@tool
+@mcp.tool()
 @traceable
 def create_account(account_holder: str, balance: float, config: RunnableConfig) -> str:
     """
@@ -71,7 +84,7 @@ def create_account(account_holder: str, balance: float, config: RunnableConfig) 
     return f"Failed to create account after {max_attempts} attempts"
 
 
-@tool
+@mcp.tool()
 @traceable
 def calculate_monthly_payment(loan_amount: float, years: int) -> float:
     """Calculate the monthly payment for a loan."""
@@ -86,3 +99,7 @@ def calculate_monthly_payment(loan_amount: float, years: int) -> float:
                       ((1 + monthly_rate) ** total_payments - 1)
 
     return round(monthly_payment, 2)  # Rounded to 2 decimal places
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

@@ -9,8 +9,15 @@ from src.app.services.azure_cosmos_db import fetch_latest_transaction_number, fe
     create_transaction_record, \
     patch_account_record, fetch_transactions_by_date_range
 
+from mcp.server.fastmcp import FastMCP
 
-@tool
+from fastapi import FastAPI
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("TransactionsTools")
+
+
+@mcp.tool()
 @traceable
 def bank_transfer(config: RunnableConfig, toAccount: str, fromAccount: str, amount: float) -> str:
     """Wrapper function to handle the transfer of funds between two accounts."""
@@ -75,7 +82,7 @@ def bank_transaction(config: RunnableConfig, account_number: str, amount: float,
     return f"Successfully transferred ${amount} to account number {account_number}"
 
 
-@tool
+@mcp.tool()
 @traceable
 def get_transaction_history(accountId: str, startDate: datetime, endDate: datetime) -> List[Dict]:
     """
@@ -94,7 +101,7 @@ def get_transaction_history(accountId: str, startDate: datetime, endDate: dateti
         return []
 
 
-@tool
+@mcp.tool()
 @traceable
 def bank_balance(config: RunnableConfig, account_number: str) -> str:
     """Retrieve the balance for a specific bank account."""
@@ -108,3 +115,7 @@ def bank_balance(config: RunnableConfig, account_number: str) -> str:
 
     balance = account.get("balance", 0)
     return f"The balance for account number {account_number} is ${balance}"
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
