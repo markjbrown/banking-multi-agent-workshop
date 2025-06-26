@@ -5,7 +5,7 @@ import uuid
 import asyncio
 from langchain.schema import AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from typing import Literal
+from typing import Literal, TypedDict
 from langgraph.graph import StateGraph, START, MessagesState
 from langgraph.prebuilt import create_react_agent
 from langgraph.types import Command, interrupt
@@ -21,6 +21,34 @@ local_interactive_mode = False
 logging.basicConfig(level=logging.DEBUG)
 
 PROMPT_DIR = os.path.join(os.path.dirname(__file__), 'prompts')
+
+import json
+from langchain_core.messages import ToolMessage
+
+def has_tool_call(messages):
+    """Returns True if any message includes a tool call."""
+    for msg in messages:
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            return True
+    return False
+
+
+def extract_goto_from_tool_messages(response, agent_name: str) -> str:
+    """Extract 'goto' from a ToolMessage content, or default to 'human'."""
+    messages = response.get("messages", []) if isinstance(response, dict) else response
+    for m in messages:
+        if isinstance(m, ToolMessage):
+            try:
+                content = json.loads(m.content)
+                if "goto" in content:
+                    goto_target = content["goto"]
+                    print(f"[DEBUG] {agent_name} extracted goto → {goto_target}")
+                    return goto_target
+            except Exception as e:
+                print(f"[WARN] Failed to parse ToolMessage in {agent_name}: {e}")
+    print(f"[DEBUG] {agent_name} found no goto — defaulting to 'human'")
+    return "human"
+
 
 
 def load_prompt(agent_name):
@@ -80,7 +108,7 @@ async def setup_agents():
     print("Starting sales agent tools MCP client...")
     # uvicorn mcp_servers.sales_server:app --host 0.0.0.0 --port 9013
     sales_agent_tools_client = MultiServerMCPClient({
-        "sales": {
+        "sales_agent": {
             "command": "python",
             "args": ["-m", "src.app.tools.sales"],
             "transport": "stdio",
@@ -124,14 +152,27 @@ async def call_coordinator_agent(state: MessagesState, config) -> Command[Litera
             })
 
     print(f"Active agent from point lookup: {activeAgent}")
+    last_agent = state.get("last_agent", None)
 
     if activeAgent not in [None, "unknown", "coordinator_agent"]:
+        # if activeAgent == last_agent:
+        #     print(f"[WARN] coordinator_agent would loop back to {activeAgent} — overriding to 'human'")
+        #     return Command(update={**state, "last_agent": "coordinator_agent"}, goto="human")
         print(f"Routing straight to last active agent: {activeAgent}")
         return Command(update=state, goto=activeAgent)
     else:
         response = await coordinator_agent.ainvoke(state)
-        print("[DEBUG] LangGraph response from coordinator:", response)
-        return Command(update=response, goto="human")
+        print("response from coordinator_agent:", response)
+        # print("[DEBUG] LangGraph response from coordinator:", response)
+        # return Command(update=response, goto="human")
+        goto = extract_goto_from_tool_messages(response, coordinator_agent.name)
+        if goto == "coordinator_agent":
+            print("[WARN] coordinator_agent attempted to self-route — overriding to 'human'")
+            goto = "human"
+        # if has_tool_call(response.get("messages", [])):
+        #     # 🧠 Suppress text output if it's just a tool transfer
+        #     return Command(update={"last_agent": "coordinator_agent"}, goto=goto)
+        return Command(update=response, goto=goto)
 
 
 @traceable(run_type="llm")
@@ -139,8 +180,15 @@ async def call_customer_support_agent(state: MessagesState, config) -> Command[L
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "customer_support_agent")
-    response = await customer_support_agent.ainvoke(state)
-    return Command(update=response, goto="human")
+    response = await customer_support_agent.ainvoke(state, config)
+    print ("response from customer_support_agent:", response)
+    goto = extract_goto_from_tool_messages(response, customer_support_agent.name)
+    if goto == "customer_support_agent":
+        print("[WARN] customer_support_agent attempted to self-route — overriding to 'human'")
+    #     goto = "human"
+    # if has_tool_call(response.get("messages", [])):
+    #     return Command(update={"last_agent": "customer_support_agent"}, goto=goto)
+    return Command(update=response, goto=goto)
 
 
 @traceable(run_type="llm")
@@ -149,7 +197,16 @@ async def call_sales_agent(state: MessagesState, config) -> Command[Literal["sal
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "sales_agent")
     response = await sales_agent.ainvoke(state, config)
-    return Command(update=response, goto="human")
+    print("response from sales_agent:", response)
+    goto = extract_goto_from_tool_messages(response, sales_agent.name)
+    if goto == "sales_agent":
+        print("[WARN] sales_agent attempted to self-route — overriding to 'human'")
+        goto = "human"
+        # 🧠 Suppress text output if it's just a tool transfer
+    # if has_tool_call(response["messages"]):
+    #     return Command(update={"last_agent": "sales_agent"}, goto=goto)
+    return Command(update=response, goto=goto)
+
 
 
 @traceable(run_type="llm")
@@ -157,8 +214,17 @@ async def call_transactions_agent(state: MessagesState, config) -> Command[Liter
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "transactions_agent")
-    response = await transactions_agent.ainvoke(state)
-    return Command(update=response, goto="human")
+    response = await transactions_agent.ainvoke(state, config)
+    print("response from transactions_agent:", response)
+    goto = extract_goto_from_tool_messages(response, transactions_agent.name)
+    if goto == "transactions_agent":
+        print("[WARN] transactions_agent attempted to self-route — overriding to 'human'")
+        goto = "human"
+    # if has_tool_call(response.get("messages", [])):
+    #     # 🧠 Suppress text output if it's just a tool transfer
+    #     return Command(update={"last_agent": "transactions_agent"}, goto=goto)
+    return Command(update=response, goto=goto)
+
 
 
 @traceable
@@ -167,6 +233,8 @@ def human_node(state: MessagesState, config) -> None:
     return None
 
 builder = StateGraph(MessagesState)
+# declare last_agent as a state value
+# builder = StateGraph(state_schema={"messages": list, "last_agent": str})
 builder.add_node("coordinator_agent", call_coordinator_agent)
 builder.add_node("customer_support_agent", call_customer_support_agent)
 builder.add_node("sales_agent", call_sales_agent)
@@ -175,13 +243,27 @@ builder.add_node("human", human_node)
 
 builder.add_edge(START, "coordinator_agent")
 
-#Allow agent-to-agent transitions (required for MCP tool-initiated transfers)
+# #Allow agent-to-agent transitions (required for MCP tool-initiated transfers)
 agents = ["coordinator_agent", "customer_support_agent", "sales_agent", "transactions_agent"]
 
-for source in agents:
-    for target in agents:
-        if source != target:
-            builder.add_edge(source, target)
+# for source in agents:
+#     for target in agents:
+#         if source != target:
+#             builder.add_edge(source, target)
+
+# Only allow coordinator to launch agents
+for agent in agents:
+    if agent != "coordinator_agent":
+        builder.add_edge("coordinator_agent", agent)
+
+# Each agent can go to `human` only
+for agent in agents:
+    if agent != "coordinator_agent":
+        builder.add_edge(agent, "human")
+
+# Resume flow: human → coordinator
+builder.add_edge("human", "coordinator_agent")
+
 
 
 checkpointer = CosmosDBSaver(database_name=DATABASE_NAME, container_name=checkpoint_container)
@@ -203,6 +285,11 @@ def interactive_chat():
 
     while user_input.lower() != "exit":
         input_message = {"messages": [{"role": "user", "content": user_input}]}
+        # input_message = {
+        #     "messages": [{"role": "user", "content": user_input}],
+        #     "last_agent": "human"
+        # }  # Ensure we start with human as the last agent
+
         response_found = False
 
         for update in graph.stream(input_message, config=thread_config, stream_mode="updates"):

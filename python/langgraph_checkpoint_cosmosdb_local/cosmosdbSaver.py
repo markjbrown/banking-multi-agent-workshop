@@ -397,7 +397,7 @@ class CosmosDBSaver(BaseCheckpointSaver):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        print("[CosmosDBSaver] aput() called")
+        #print("[CosmosDBSaver] aput() called")
         return self.put(config, checkpoint, metadata, new_versions)
 
 
