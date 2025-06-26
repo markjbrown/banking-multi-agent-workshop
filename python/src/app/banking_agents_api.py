@@ -451,6 +451,7 @@ def extract_relevant_messages(debug_lod_id, last_active_agent, response_data, te
                 last_agent_name = list(last_agent_node.keys())[0]
             break
 
+    print(f"Last active agent: {last_agent_name}")
     # storing the last active agent in the session container so that we can retrieve it later
     # and deterministically route the incoming message directly to the agent that asked the question.
     patch_active_agent(tenantId, userId, sessionId, last_agent_name)
