@@ -15,6 +15,7 @@ from langgraph_checkpoint_cosmosdb_local import CosmosDBSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langsmith import traceable
 from src.app.services.azure_open_ai import model
+#from src.app.services.local_model import model  # Use local model for testing
 from src.app.services.azure_cosmos_db import DATABASE_NAME, checkpoint_container, chat_container, \
     update_chat_container, patch_active_agent
 
