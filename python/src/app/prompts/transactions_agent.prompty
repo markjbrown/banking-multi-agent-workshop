@@ -4,5 +4,5 @@ Then call 'bank_transfer' tool with toAccount, fromAccount, and amount values.
 Make sure you confirm the transaction details with the user before calling the 'bank_transfer' tool.
 then call 'bank_transfer' tool with these values.
 If the user wants to know transaction history, ask for the start and end date, and call 'get_transaction_history' tool with these values.
-If the user needs general help, transfer to 'customer_support' for help.
+If the user needs general help, call 'transfer_to_customer_support_agent' for help.
 You MUST respond with the repayment amounts before transferring to another agent.

@@ -3,7 +3,8 @@ import os
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Annotated
+from langchain_core.tools.base import InjectedToolCallId
 
 # 🔁 Ensure project root is in sys.path before imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -20,6 +21,36 @@ from src.app.services.azure_cosmos_db import create_service_request_record
 
 # ✅ Initialize the MCP tool server
 mcp = FastMCP("SupportTools")
+
+def transfer_to_agent_message(agent):
+    print(Fore.LIGHTMAGENTA_EX + f"transfer_to_{agent}..." + Style.RESET_ALL)
+
+def create_agent_transfer(agent_name: str):
+    tool_name = f"transfer_to_{agent_name}"
+
+    @mcp.tool(tool_name)
+    def transfer_to_agent(
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        **kwargs
+    ):
+        state = kwargs.get("state", {})
+        print(Fore.LIGHTMAGENTA_EX + f"→ Transferring to {agent_name.replace('_', ' ')}..." + Style.RESET_ALL)
+        tool_message = {
+            "role": "tool",
+            "content": f"Successfully transferred to {agent_name.replace('_', ' ')}",
+            "name": tool_name,
+            "tool_call_id": tool_call_id,
+        }
+        transfer_to_agent_message(agent_name)
+        return Command(
+            goto=agent_name,
+            graph=Command.PARENT,
+            update={"messages": state.get("messages", []) + [tool_message]},
+        )
+
+# Register agent transfer tools
+create_agent_transfer("sales_agent")
+create_agent_transfer("transactions_agent")
 
 # 🔧 Tool: Create a service request
 @mcp.tool()

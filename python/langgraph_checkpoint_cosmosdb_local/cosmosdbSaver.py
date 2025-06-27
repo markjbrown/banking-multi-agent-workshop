@@ -397,29 +397,8 @@ class CosmosDBSaver(BaseCheckpointSaver):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        #print("[CosmosDBSaver] aput() called")
         return self.put(config, checkpoint, metadata, new_versions)
 
-
-    # async def aput_writes(
-    #     self,
-    #     config: RunnableConfig,
-    #     writes: Union[List[PendingWrite], List[Tuple[str, Any]]],
-    #     task_id: Optional[str] = None
-    # ) -> None:
-    #     print("[CosmosDBSaver] aput_writes() called")
-    #     for write in writes:
-    #         if isinstance(write, PendingWrite):
-    #             channel = write.channel
-    #             value = write.value
-    #             write_task_id = write.task_id or task_id
-    #         elif isinstance(write, tuple) and len(write) == 2:
-    #             channel, value = write
-    #             write_task_id = task_id
-    #         else:
-    #             raise ValueError(f"Unrecognized write format: {write!r}")
-
-    #         self.put_writes(config=config, writes=[(channel, value)], task_id=write_task_id)
 
     async def aput_writes(
         self,
@@ -428,15 +407,6 @@ class CosmosDBSaver(BaseCheckpointSaver):
         task_id: Optional[str] = None
     ) -> RunnableConfig:
         self.put_writes(config=config, writes=writes, task_id=task_id)
-
-
-
-
-
-        # continue processing using thread_id...
-
-
-
 
     async def adelete(self, thread_id: str, checkpoint_namespace: str, checkpoint_id: str) -> None:
         checkpoint_key = _make_cosmosdb_checkpoint_key(thread_id, checkpoint_namespace, checkpoint_id)

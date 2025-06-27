@@ -4,29 +4,28 @@ from typing import List, Dict
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langsmith import traceable
+from langchain_mcp_adapters.tools import to_fastmcp
 
-from src.app.services.azure_cosmos_db import fetch_latest_transaction_number, fetch_account_by_number, \
-    create_transaction_record, \
-    patch_account_record, fetch_transactions_by_date_range
+from src.app.services.azure_cosmos_db import (
+    fetch_latest_transaction_number,
+    fetch_account_by_number,
+    create_transaction_record,
+    patch_account_record,
+    fetch_transactions_by_date_range,
+)
 
 from mcp.server.fastmcp import FastMCP
 
-from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("TransactionsTools")
-
-
-@mcp.tool()
+@tool
 @traceable
-def bank_transfer(config: RunnableConfig, toAccount: str, fromAccount: str, amount: float) -> str:
-    """Wrapper function to handle the transfer of funds between two accounts."""
-    # Debit the amount from the fromAccount
+def transfer(config: RunnableConfig, toAccount: str, fromAccount: str, amount: float) -> str:
+    """Transfer funds between two accounts."""
+    print(f"Transferring ${amount} from {fromAccount} to {toAccount}...")
     debit_result = bank_transaction(config, fromAccount, amount, credit_account=0, debit_account=amount)
     if "Failed" in debit_result:
         return f"Failed to debit amount from {fromAccount}: {debit_result}"
 
-    # Credit the amount to the toAccount
     credit_result = bank_transaction(config, toAccount, amount, credit_account=amount, debit_account=0)
     if "Failed" in credit_result:
         return f"Failed to credit amount to {toAccount}: {credit_result}"
@@ -36,12 +35,12 @@ def bank_transfer(config: RunnableConfig, toAccount: str, fromAccount: str, amou
 
 def bank_transaction(config: RunnableConfig, account_number: str, amount: float, credit_account: float,
                      debit_account: float) -> str:
-    """Transfer to bank agent"""
-    global new_balance
+    print(f"Processing transaction for account {account_number}: "
+          f"credit=${credit_account}, debit=${debit_account}, total amount=${amount}")
+    """Helper to execute bank debit or credit."""
     tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
     userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
 
-    # Fetch the account record
     account = fetch_account_by_number(account_number, tenantId, userId)
     if not account:
         return f"Account {account_number} not found for tenant {tenantId} and user {userId}"
@@ -49,14 +48,10 @@ def bank_transaction(config: RunnableConfig, account_number: str, amount: float,
     max_attempts = 5
     for attempt in range(max_attempts):
         try:
-            # Fetch the latest transaction number for the account
             latest_transaction_number = fetch_latest_transaction_number(account_number)
             transaction_id = f"{account_number}-{latest_transaction_number + 1}"
-
-            # Calculate the new account balance
             new_balance = account["balance"] + credit_account - debit_account
 
-            # Create the transaction record
             transaction_data = {
                 "id": transaction_id,
                 "tenantId": tenantId,
@@ -70,45 +65,34 @@ def bank_transaction(config: RunnableConfig, account_number: str, amount: float,
             }
 
             create_transaction_record(transaction_data)
-            print(f"Successfully transferred ${amount} to account number {account_number}")
-            break  # Stop retrying after a successful attempt
+            break
         except Exception as e:
-            logging.error(f"Attempt {attempt + 1} failed: {e}")
+            print(f"Attempt {attempt + 1} failed: {e}")
             if attempt == max_attempts - 1:
                 return f"Failed to create transaction record after {max_attempts} attempts: {e}"
 
-    # Update the account balance
     patch_account_record(tenantId, account["accountId"], new_balance)
     return f"Successfully transferred ${amount} to account number {account_number}"
 
 
-@mcp.tool()
+@tool
 @traceable
-def get_transaction_history(accountId: str, startDate: datetime, endDate: datetime) -> List[Dict]:
-    """
-    Retrieve the transaction history for a specific account between two dates.
-
-    :param accountId: The ID of the account to retrieve transactions for.
-    :param startDate: The start date for the transaction history.
-    :param endDate: The end date for the transaction history.
-    :return: A list of transactions within the specified date range.
-    """
+def transaction_history(accountId: str, startDate: datetime, endDate: datetime) -> List[Dict]:
+    """Retrieve transactions for an account between two dates."""
     try:
-        transactions = fetch_transactions_by_date_range(accountId, startDate, endDate)
-        return transactions
+        return fetch_transactions_by_date_range(accountId, startDate, endDate)
     except Exception as e:
         logging.error(f"Error fetching transaction history for account {accountId}: {e}")
         return []
 
 
-@mcp.tool()
+@tool
 @traceable
-def bank_balance(config: RunnableConfig, account_number: str) -> str:
+def balance(config: RunnableConfig, account_number: str) -> str:
     """Retrieve the balance for a specific bank account."""
     tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
     userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
 
-    # Fetch the account record
     account = fetch_account_by_number(account_number, tenantId, userId)
     if not account:
         return f"Account {account_number} not found for tenant {tenantId} and user {userId}"
@@ -116,6 +100,43 @@ def bank_balance(config: RunnableConfig, account_number: str) -> str:
     balance = account.get("balance", 0)
     return f"The balance for account number {account_number} is ${balance}"
 
+
+@tool
+@traceable
+def transfer_to_customer_support_agent() -> dict:
+    """Transfer control to the customer support agent."""
+    return {
+        "graph": "__parent__",
+        "update": {
+            "messages": [
+                {
+                    "role": "tool",
+                    "content": "Successfully transferred to customer support agent",
+                    "name": "transfer_to_customer_support_agent",
+                    "tool_call_id": "1"
+                }
+            ]
+        },
+        "goto": "customer_support_agent"
+    }
+
+
+# Convert tools for MCP
+bank_transfer = to_fastmcp(transfer)
+bank_balance = to_fastmcp(balance)
+get_transaction_history = to_fastmcp(transaction_history)
+transfer_tool = to_fastmcp(transfer_to_customer_support_agent)
+
+# Initialize FastMCP with a proper instructions string
+mcp = FastMCP(
+    instructions="MCP server providing banking tools for transfers, balance checking, and agent redirection.",
+    tools=[
+        bank_transfer,
+        bank_balance,
+        get_transaction_history,
+        transfer_tool
+    ]
+)
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")

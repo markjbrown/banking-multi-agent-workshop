@@ -3,6 +3,8 @@ import os
 import sys
 import uuid
 import asyncio
+import json
+from langchain_core.messages import ToolMessage
 from langchain.schema import AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from typing import Literal
@@ -38,7 +40,6 @@ async def setup_agents():
     global coordinator_agent, customer_support_agent, transactions_agent, sales_agent
 
     print("Starting coordinator agent tools MCP client...")
-    #  uvicorn mcp_servers.coordinator_server:app --host 0.0.0.0 --port 9010
     coordinator_agent_tools_client = MultiServerMCPClient({
         "coordinator_agent": {
             "command": "python",
@@ -53,7 +54,6 @@ async def setup_agents():
     coordinator_agent = create_react_agent(model, coordinator_tools, state_modifier=load_prompt("coordinator_agent"))
 
     print("Starting customer support agent tools MCP client...")
-    # uvicorn mcp_servers.support_server:app --host 0.0.0.0 --port 9011
     customer_support_agent_tools_client = MultiServerMCPClient({
         "customer_support_agent": {
             "command": "python",
@@ -66,7 +66,6 @@ async def setup_agents():
                                                 state_modifier=load_prompt("customer_support_agent"))
 
     print("Starting transactions agent tools MCP client...")
-    # uvicorn mcp_servers.transactions_server:app --host 0.0.0.0 --port 9012
     transactions_agent_tools_client = MultiServerMCPClient({
         "transactions_agent": {
             "command": "python",
@@ -78,9 +77,8 @@ async def setup_agents():
     transactions_agent = create_react_agent(model, transactions_tools, state_modifier=load_prompt("transactions_agent"))
 
     print("Starting sales agent tools MCP client...")
-    # uvicorn mcp_servers.sales_server:app --host 0.0.0.0 --port 9013
     sales_agent_tools_client = MultiServerMCPClient({
-        "sales": {
+        "sales_agent": {
             "command": "python",
             "args": ["-m", "src.app.tools.sales"],
             "transport": "stdio",
@@ -88,10 +86,6 @@ async def setup_agents():
     })
     sales_tools = await sales_agent_tools_client.get_tools()
     sales_agent = create_react_agent(model, sales_tools, state_modifier=load_prompt("sales_agent"))
-
-    # Once agents are ready, compile the graph and start chat
-    # interactive_chat()
-
 
 @traceable(run_type="llm")
 async def call_coordinator_agent(state: MessagesState, config) -> Command[Literal["coordinator_agent", "human"]]:
@@ -130,8 +124,6 @@ async def call_coordinator_agent(state: MessagesState, config) -> Command[Litera
         return Command(update=state, goto=activeAgent)
     else:
         response = await coordinator_agent.ainvoke(state)
-        print("******************************************************************")
-        print("[DEBUG] LangGraph response from coordinator:", response)
         return Command(update=response, goto="human")
 
 
@@ -141,8 +133,6 @@ async def call_customer_support_agent(state: MessagesState, config) -> Command[L
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "customer_support_agent")
     response = await customer_support_agent.ainvoke(state)
-    print("******************************************************************")
-    print("[DEBUG] LangGraph response from customer support agent:", response)
     return Command(update=response, goto="human")
 
 
@@ -152,8 +142,6 @@ async def call_sales_agent(state: MessagesState, config) -> Command[Literal["sal
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "sales_agent")
     response = await sales_agent.ainvoke(state, config)
-    print("******************************************************************")
-    print("[DEBUG] LangGraph response from sales agent:", response)
     return Command(update=response, goto="human")
 
 
@@ -162,9 +150,7 @@ async def call_transactions_agent(state: MessagesState, config) -> Command[Liter
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "transactions_agent")
-    response = await transactions_agent.ainvoke(state)
-    print("******************************************************************")
-    print("[DEBUG] LangGraph response from transactions agent:", response)
+    response = await transactions_agent.ainvoke(state, config)
     return Command(update=response, goto="human")
 
 
@@ -173,14 +159,42 @@ def human_node(state: MessagesState, config) -> None:
     interrupt(value="Ready for user input.")
     return None
 
-def route_from_coordinator(state: MessagesState) -> str:
-    # thread_id = state.get("thread_id")
-    # if not thread_id:
-    #     return "coordinator_agent"  # fail-safe
-    # activeAgent = chat_container.read_item(item=thread_id, partition_key=[state.get("tenantId"), state.get("userId"), thread_id]).get('activeAgent', 'unknown')
-    # print(f"Routing from coordinator based on active agent: {activeAgent}")
-    #return activeAgent
-    return "sales_agent"
+def get_active_agent(state: MessagesState, config) -> str:
+    thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
+    userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
+    tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
+    # print("DEBUG: get_active_agent called with state:", state)
+
+    activeAgent = None
+
+    # Search for last ToolMessage and try to extract `goto`
+    for message in reversed(state['messages']):
+        if isinstance(message, ToolMessage):
+            try:
+                content_json = json.loads(message.content)
+                activeAgent = content_json.get("goto")
+                if activeAgent:
+                    print(f"DEBUG: Extracted activeAgent from ToolMessage: {activeAgent}")
+                    break
+            except Exception as e:
+                print(f"DEBUG: Failed to parse ToolMessage content: {e}")
+
+    # Fallback: Cosmos DB lookup if needed
+    if not activeAgent:
+        try:
+            thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
+            print(f"DEBUG: thread_id in get_active_agent: {thread_id}")
+            activeAgent = chat_container.read_item(
+                item=thread_id,
+                partition_key=[tenantId, userId, thread_id]
+            ).get('activeAgent', 'unknown')
+            print(f"Active agent from DB fallback: {activeAgent}")
+        except Exception as e:
+            print(f"Error retrieving active agent from DB: {e}")
+            activeAgent = "unknown"
+
+    return activeAgent
+
 
 builder = StateGraph(MessagesState)
 builder.add_node("coordinator_agent", call_coordinator_agent)
@@ -191,32 +205,9 @@ builder.add_node("human", human_node)
 
 builder.add_edge(START, "coordinator_agent")
 
-#Allow agent-to-agent transitions (required for MCP tool-initiated transfers)
-# agents = ["coordinator_agent", "customer_support_agent", "sales_agent", "transactions_agent"]
-
-# for source in agents:
-#     for target in agents:
-#         if source != target:
-#             builder.add_edge(source, target)
-
-# builder.add_conditional_edges(
-#     "coordinator_agent",
-#     route_from_coordinator,
-#     {
-#         "sales_agent": "sales_agent",
-#         "transactions_agent": "transactions_agent",
-#         "customer_support_agent": "customer_support_agent",
-#         "coordinator_agent": "coordinator_agent",  # fallback
-#     }
-# )
-
-#builder.add_edge("sales_agent", "human")
-#builder.add_edge("transactions_agent", "human")
-#builder.add_edge("customer_support_agent", "human")
-
 builder.add_conditional_edges(
     "coordinator_agent",
-    route_from_coordinator,
+    get_active_agent,
     {
         "sales_agent": "sales_agent",
         "transactions_agent": "transactions_agent",
@@ -224,13 +215,6 @@ builder.add_conditional_edges(
         "coordinator_agent": "coordinator_agent",  # fallback
     }
 )
-
-# builder.add("coordinator_agent", "sales_agent", condition=lambda state: state.get("messages", [])[-1].get("content", "").lower().startswith("sales"))
-# builder.add_edge("coordinator_agent", "transactions_agent", condition=lambda state: state.get("messages", [])[-1].get("content", "").lower().startswith("transactions"))
-# builder.add_edge("coordinator_agent", "customer_support_agent", condition=lambda state: state.get("messages", [])[-1].get("content", "").lower().startswith("support"))
-
-#builder.set_finish_point("human")
-
 
 checkpointer = CosmosDBSaver(database_name=DATABASE_NAME, container_name=checkpoint_container)
 import inspect

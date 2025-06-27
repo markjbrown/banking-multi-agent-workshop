@@ -15,6 +15,9 @@ sys.path.insert(0, project_root)
 # ✅ Initialize MCP tool server
 mcp = FastMCP("CoordinatorTools")
 
+def transfer_to_agent_message(agent):
+    print(Fore.LIGHTMAGENTA_EX + f"transfer_to_{agent}..." + Style.RESET_ALL)
+
 def create_agent_transfer(agent_name: str):
     tool_name = f"transfer_to_{agent_name}"
 
@@ -31,6 +34,7 @@ def create_agent_transfer(agent_name: str):
             "name": tool_name,
             "tool_call_id": tool_call_id,
         }
+        transfer_to_agent_message(agent_name)
         return Command(
             goto=agent_name,
             graph=Command.PARENT,

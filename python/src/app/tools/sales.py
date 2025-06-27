@@ -1,4 +1,6 @@
-from typing import Any
+from typing import Any, Annotated
+
+from langchain_core.tools.base import InjectedToolCallId
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
@@ -20,6 +22,36 @@ import os
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
+
+def transfer_to_agent_message(agent):
+    print(Fore.LIGHTMAGENTA_EX + f"transfer_to_{agent}..." + Style.RESET_ALL)
+
+def create_agent_transfer(agent_name: str):
+    tool_name = f"transfer_to_{agent_name}"
+
+    @mcp.tool(tool_name)
+    def transfer_to_agent(
+        tool_call_id: Annotated[str, InjectedToolCallId],
+        **kwargs
+    ):
+        state = kwargs.get("state", {})
+        print(Fore.LIGHTMAGENTA_EX + f"→ Transferring to {agent_name.replace('_', ' ')}..." + Style.RESET_ALL)
+        tool_message = {
+            "role": "tool",
+            "content": f"Successfully transferred to {agent_name.replace('_', ' ')}",
+            "name": tool_name,
+            "tool_call_id": tool_call_id,
+        }
+        transfer_to_agent_message(agent_name)
+        return Command(
+            goto=agent_name,
+            graph=Command.PARENT,
+            update={"messages": state.get("messages", []) + [tool_message]},
+        )
+
+# Register agent transfer tools
+create_agent_transfer("customer_support_agent")
+create_agent_transfer("transactions_agent")
 
 
 @mcp.tool()
