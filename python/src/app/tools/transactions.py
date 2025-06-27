@@ -19,13 +19,15 @@ from mcp.server.fastmcp import FastMCP
 
 @tool
 @traceable
-def transfer(config: RunnableConfig, toAccount: str, fromAccount: str, amount: float) -> str:
+def transfer(config: RunnableConfig, toAccount: str, fromAccount: str, amount: float, tenantId: str, userId: str, thread_id: str) -> str:
     """Transfer funds between two accounts."""
     print(f"Transferring ${amount} from {fromAccount} to {toAccount}...")
+    config["configurable"]["tenantId"] = tenantId
+    config["configurable"]["userId"] = userId
+    config["configurable"]["thread_id"] = thread_id
     debit_result = bank_transaction(config, fromAccount, amount, credit_account=0, debit_account=amount)
     if "Failed" in debit_result:
         return f"Failed to debit amount from {fromAccount}: {debit_result}"
-
     credit_result = bank_transaction(config, toAccount, amount, credit_account=amount, debit_account=0)
     if "Failed" in credit_result:
         return f"Failed to credit amount to {toAccount}: {credit_result}"

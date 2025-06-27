@@ -4,7 +4,7 @@ import sys
 import uuid
 import asyncio
 import json
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, SystemMessage
 from langchain.schema import AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from typing import Literal
@@ -148,9 +148,22 @@ async def call_sales_agent(state: MessagesState, config) -> Command[Literal["sal
 @traceable(run_type="llm")
 async def call_transactions_agent(state: MessagesState, config) -> Command[Literal["transactions_agent", "human"]]:
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
+    userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
+    tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "transactions_agent")
+    state["messages"].append({
+        "role": "system",
+        "content": f"When calling bank_transfer tool, be sure to pass in tenantId='{tenantId}', userId='{userId}', thread_id='{thread_id}'"
+    })
     response = await transactions_agent.ainvoke(state, config)
+    # explicitly remove the system message added above from response
+    print(f"DEBUG: transactions_agent response: {response}")
+    if isinstance(response, dict) and "messages" in response:
+        response["messages"] = [
+            msg for msg in response["messages"]
+            if not isinstance(msg, SystemMessage)
+        ]
     return Command(update=response, goto="human")
 
 
