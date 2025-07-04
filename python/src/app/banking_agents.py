@@ -37,56 +37,38 @@ def load_prompt(agent_name):
         return "You are an AI banking assistant."
 
 
+# Tool filtering utility
+def filter_tools_by_prefix(tools, prefixes):
+    return [tool for tool in tools if any(tool.name.startswith(prefix) for prefix in prefixes)]
+
 async def setup_agents():
     global coordinator_agent, customer_support_agent, transactions_agent, sales_agent
 
-    print("Starting coordinator agent tools MCP client...")
-    coordinator_agent_tools_client = MultiServerMCPClient({
-        "coordinator_agent": {
+    print("Starting unified Banking Tools MCP client...")
+    mcp_client = MultiServerMCPClient({
+        "banking_tools": {
             "command": "python",
-            "args": ["-m", "src.app.tools.coordinator"],
+            "args": ["-m", "src.app.tools.mcp_server"], 
             "transport": "stdio",
         },
     })
-    coordinator_tools = await coordinator_agent_tools_client.get_tools()
-    print("[DEBUG] Tools registered with coordinator MCP:")
-    for tool in coordinator_tools:
+
+    all_tools = await mcp_client.get_tools()
+    print("[DEBUG] All tools registered from unified MCP server:")
+    for tool in all_tools:
         print("  -", tool.name)
+
+    # Assign tools to agents based on tool name prefix
+    coordinator_tools = filter_tools_by_prefix(all_tools, ["transfer_to_"])
+    support_tools = filter_tools_by_prefix(all_tools, ["service_request", "get_branch_location", "transfer_to_sales_agent", "transfer_to_transactions_agent"])
+    sales_tools = filter_tools_by_prefix(all_tools, ["get_offer_information", "create_account", "calculate_monthly_payment", "transfer_to_customer_support_agent", "transfer_to_transactions_agent"])
+    transactions_tools = filter_tools_by_prefix(all_tools, ["bank_transfer", "get_transaction_history", "bank_balance", "transfer_to_customer_support_agent"])
+
+    # Create agents with their respective tools
     coordinator_agent = create_react_agent(model, coordinator_tools, state_modifier=load_prompt("coordinator_agent"))
-
-    print("Starting customer support agent tools MCP client...")
-    customer_support_agent_tools_client = MultiServerMCPClient({
-        "customer_support_agent": {
-            "command": "python",
-            "args": ["-m", "src.app.tools.support"],
-            "transport": "stdio",
-        },
-    })
-    support_tools = await customer_support_agent_tools_client.get_tools()
-    customer_support_agent = create_react_agent(model, support_tools,
-                                                state_modifier=load_prompt("customer_support_agent"))
-
-    print("Starting transactions agent tools MCP client...")
-    transactions_agent_tools_client = MultiServerMCPClient({
-        "transactions_agent": {
-            "command": "python",
-            "args": ["-m", "src.app.tools.transactions"],
-            "transport": "stdio",
-        },
-    })
-    transactions_tools = await transactions_agent_tools_client.get_tools()
-    transactions_agent = create_react_agent(model, transactions_tools, state_modifier=load_prompt("transactions_agent"))
-
-    print("Starting sales agent tools MCP client...")
-    sales_agent_tools_client = MultiServerMCPClient({
-        "sales_agent": {
-            "command": "python",
-            "args": ["-m", "src.app.tools.sales"],
-            "transport": "stdio",
-        },
-    })
-    sales_tools = await sales_agent_tools_client.get_tools()
+    customer_support_agent = create_react_agent(model, support_tools, state_modifier=load_prompt("customer_support_agent"))
     sales_agent = create_react_agent(model, sales_tools, state_modifier=load_prompt("sales_agent"))
+    transactions_agent = create_react_agent(model, transactions_tools, state_modifier=load_prompt("transactions_agent"))
 
 @traceable(run_type="llm")
 async def call_coordinator_agent(state: MessagesState, config) -> Command[Literal["coordinator_agent", "human"]]:
@@ -231,10 +213,6 @@ builder.add_conditional_edges(
 )
 
 checkpointer = CosmosDBSaver(database_name=DATABASE_NAME, container_name=checkpoint_container)
-import inspect
-print("✅ Using CosmosDBSaver from:", checkpointer.__class__.__module__)
-print("🧠 CosmosDBSaver.aput signature:", inspect.signature(checkpointer.aput))
-#checkpointer = MemorySaver()  # Use MemorySaver for local testing
 graph = builder.compile(checkpointer=checkpointer)
 
 

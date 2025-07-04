@@ -1,26 +1,37 @@
 import sys
 import os
 import logging
-import uuid
+from typing import Any, Annotated, Dict, List
 from datetime import datetime
-from typing import Dict, List, Annotated
+import uuid
+from colorama import Fore, Style
+from langgraph.types import Command
+from langgraph.prebuilt import InjectedState
 from langchain_core.tools.base import InjectedToolCallId
+from langchain_core.runnables import RunnableConfig
+from mcp.server.fastmcp import FastMCP
+from langsmith import traceable
+from src.app.services.azure_open_ai import generate_embedding
+from src.app.services.azure_cosmos_db import (
+    vector_search,
+    create_account_record,
+    create_service_request_record,
+    fetch_latest_account_number,
+    fetch_latest_transaction_number,
+    fetch_account_by_number,
+    create_transaction_record,
+    patch_account_record,
+    fetch_transactions_by_date_range,
+)
 
 # 🔁 Ensure project root is in sys.path before imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
-# ✅ MCP stdio server import
-from mcp.server.fastmcp import FastMCP
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
-from langsmith import traceable
+# ✅ Initialize MCP tool server
+mcp = FastMCP("BankingTools")
 
-# ✅ Your own service import
-from src.app.services.azure_cosmos_db import create_service_request_record
-
-# ✅ Initialize the MCP tool server
-mcp = FastMCP("SupportTools")
+##### Coordinator agent tools #####
 
 def transfer_to_agent_message(agent):
     print(Fore.LIGHTMAGENTA_EX + f"transfer_to_{agent}..." + Style.RESET_ALL)
@@ -50,7 +61,91 @@ def create_agent_transfer(agent_name: str):
 
 # Register agent transfer tools
 create_agent_transfer("sales_agent")
+create_agent_transfer("customer_support_agent")
 create_agent_transfer("transactions_agent")
+
+##### Sales agent tools #####
+
+@mcp.tool()
+@traceable
+def get_offer_information(user_prompt: str, accountType: str) -> list[dict[str, Any]]:
+    """Provide information about a product based on the user prompt.
+    Takes as input the user prompt as a string."""
+    # Perform a vector search on the Cosmos DB container and return results to the agent
+    vectors = generate_embedding(user_prompt)
+    search_results = vector_search(vectors, accountType)
+    return search_results
+
+
+@mcp.tool()
+@traceable
+def create_account(account_holder: str, balance: float, config: RunnableConfig) -> str:
+    """
+    Create a new bank account for a user.
+
+    This function retrieves the latest account number, increments it, and creates a new account record
+    in Cosmos DB associated with a specific user and tenant.
+    """
+    print(f"Creating account for {account_holder}")
+    thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
+    userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
+    tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
+    max_attempts = 10
+    account_number = fetch_latest_account_number()
+
+    print(f"Latest account number: {account_number}")
+    if account_number is None:
+        account_number = 1
+    else:
+        account_number += 1
+
+    for attempt in range(max_attempts):
+        account_data = {
+            "id": f"{account_number}",
+            "accountId": f"A{account_number}",
+            "tenantId": tenantId,
+            "userId": userId,
+            "name": "Account",
+            "type": "BankAccount",
+            "accountName": account_holder,
+            "balance": balance,
+            "startDate": "01-01-2025",
+            "accountDescription": "Some description here",
+            "accountProperties": {
+                "key1": "Value1",
+                "key2": "Value2"
+            }
+        }
+        try:
+            print(f"Creating account record: {account_data}")
+            create_account_record(account_data)
+            return f"Successfully created account {account_number} for {account_holder} with a balance of ${balance}"
+        except Exception as e:
+            account_number += 1
+            if attempt == max_attempts - 1:
+                return f"Failed to create account after {max_attempts} attempts: {e}"
+
+    return f"Failed to create account after {max_attempts} attempts"
+
+
+@mcp.tool()
+@traceable
+def calculate_monthly_payment(loan_amount: float, years: int) -> float:
+    """Calculate the monthly payment for a loan."""
+    interest_rate = 0.05  # Hardcoded annual interest rate (5%)
+    monthly_rate = interest_rate / 12  # Convert annual rate to monthly
+    total_payments = years * 12  # Total number of monthly payments
+
+    if monthly_rate == 0:
+        return loan_amount / total_payments  # If interest rate is 0, simple division
+
+    monthly_payment = (loan_amount * monthly_rate * (1 + monthly_rate) ** total_payments) / \
+                      ((1 + monthly_rate) ** total_payments - 1)
+
+    return round(monthly_payment, 2)  # Rounded to 2 decimal places
+
+
+#### Support agent tools #####
 
 # 🔧 Tool: Create a service request
 @mcp.tool()
@@ -202,6 +297,101 @@ def get_branch_location(state: str) -> Dict[str, List[str]]:
         }
     return branches.get(state, {"Unknown County": ["No branches available"]})
 
+##### Transactions agent tools #####
+
+@mcp.tool()
+@traceable
+def bank_transfer(toAccount: str, fromAccount: str, amount: float, tenantId: str, userId: str, thread_id: str) -> str:
+    """Transfer funds between two accounts."""
+    print(f"Transferring ${amount} from {fromAccount} to {toAccount}...")
+    config = RunnableConfig(configurable={
+        "tenantId": tenantId,
+        "userId": userId,
+        "thread_id": thread_id
+    })
+    if amount <= 0:
+        return "Transfer amount must be greater than zero."
+    config["configurable"]["tenantId"] = tenantId
+    config["configurable"]["userId"] = userId
+    config["configurable"]["thread_id"] = thread_id
+    debit_result = bank_transaction(config, fromAccount, amount, credit_account=0, debit_account=amount)
+    if "Failed" in debit_result:
+        return f"Failed to debit amount from {fromAccount}: {debit_result}"
+    credit_result = bank_transaction(config, toAccount, amount, credit_account=amount, debit_account=0)
+    if "Failed" in credit_result:
+        return f"Failed to credit amount to {toAccount}: {credit_result}"
+
+    return f"Successfully transferred ${amount} from account {fromAccount} to account {toAccount}"
+
+
+def bank_transaction(config: RunnableConfig, account_number: str, amount: float, credit_account: float,
+                     debit_account: float) -> str:
+    print(f"Processing transaction for account {account_number}: "
+          f"credit=${credit_account}, debit=${debit_account}, total amount=${amount}")
+    """Helper to execute bank debit or credit."""
+    tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
+    userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
+
+    account = fetch_account_by_number(account_number, tenantId, userId)
+    if not account:
+        return f"Account {account_number} not found for tenant {tenantId} and user {userId}"
+
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            latest_transaction_number = fetch_latest_transaction_number(account_number)
+            transaction_id = f"{account_number}-{latest_transaction_number + 1}"
+            new_balance = account["balance"] + credit_account - debit_account
+
+            transaction_data = {
+                "id": transaction_id,
+                "tenantId": tenantId,
+                "accountId": account["accountId"],
+                "type": "BankTransaction",
+                "debitAmount": debit_account,
+                "creditAmount": credit_account,
+                "accountBalance": new_balance,
+                "details": "Bank Transfer",
+                "transactionDateTime": datetime.utcnow().isoformat() + "Z"
+            }
+
+            create_transaction_record(transaction_data)
+            break
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt == max_attempts - 1:
+                return f"Failed to create transaction record after {max_attempts} attempts: {e}"
+
+    patch_account_record(tenantId, account["accountId"], new_balance)
+    return f"Successfully transferred ${amount} to account number {account_number}"
+
+
+@mcp.tool()
+@traceable
+def get_transaction_history(accountId: str, startDate: datetime, endDate: datetime) -> List[Dict]:
+    """Retrieve transactions for an account between two dates."""
+    try:
+        return fetch_transactions_by_date_range(accountId, startDate, endDate)
+    except Exception as e:
+        logging.error(f"Error fetching transaction history for account {accountId}: {e}")
+        return []
+
+
+@mcp.tool()
+@traceable
+def bank_balance(config: RunnableConfig, account_number: str) -> str:
+    """Retrieve the balance for a specific bank account."""
+    tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
+    userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
+
+    account = fetch_account_by_number(account_number, tenantId, userId)
+    if not account:
+        return f"Account {account_number} not found for tenant {tenantId} and user {userId}"
+
+    balance = account.get("balance", 0)
+    return f"The balance for account number {account_number} is ${balance}"
+
 # ✅ Entry point for stdio server
 if __name__ == "__main__":
+    print("Starting Banking Tools MCP server...")
     mcp.run(transport="stdio")
