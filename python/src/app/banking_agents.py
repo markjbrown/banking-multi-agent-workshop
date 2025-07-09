@@ -11,7 +11,7 @@ from typing import Literal
 from langgraph.graph import StateGraph, START, MessagesState
 from langgraph.prebuilt import create_react_agent
 from langgraph.types import Command, interrupt
-from langgraph_checkpoint_cosmosdb_local import CosmosDBSaver
+from langgraph_checkpoint_cosmosdb import CosmosDBSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langsmith import traceable
 from src.app.services.azure_open_ai import model
