@@ -54,35 +54,43 @@ except Exception as e:
 
 
 def vector_search(vectors, accountType):
-    print("accountType: ", accountType)
-    print("vectors: ", vectors)
-    # Execute the query
-    results = offers_container.query_items(
-        query='''
-        SELECT TOP 10 c.offerId, c.text, c.name
-                        FROM c
-                        WHERE c.type = 'Term'
-                        AND c.accountType = @accountType
-                        AND VectorDistance(c.vector, @referenceVector)> 0.075
-                        ORDER BY VectorDistance(c.vector, @referenceVector) 
-        ''',
-        parameters=[
-            {"name": "@accountType", "value": accountType},
-            {"name": "@referenceVector", "value": vectors}
-        ],
-        enable_cross_partition_query=True, populate_query_metrics=True)
-    print("Executed vector search in Azure Cosmos DB... \n")
-    print("Results: ", results)
     try:
-        results = list(results)
+        results = offers_container.query_items(
+            query='''
+            SELECT TOP 3 c.offerId, c.text, c.name
+                            FROM c
+                            WHERE c.type = 'Term'
+                            AND c.accountType = @accountType
+                            AND VectorDistance(c.vector, @referenceVector)> 0.075
+                            ORDER BY VectorDistance(c.vector, @referenceVector) 
+            ''',
+            parameters=[
+                {"name": "@accountType", "value": accountType},
+                {"name": "@referenceVector", "value": vectors}
+            ],
+            enable_cross_partition_query=True, 
+            populate_query_metrics=True
+        )
+        
+        # Convert iterator to list with error handling
+        result_list = []
+        try:
+            count = 0
+            for item in results:
+                result_list.append(item)
+                count += 1
+                if count >= 3:  # Safety limit to prevent infinite loops
+                    break
+            
+        except Exception as list_error:
+            logging.error(f"Error processing results iterator: {list_error}")
+            return []
+        
+        return result_list
+        
     except Exception as e:
-        print(f"[ERROR] Error fetching results from Cosmos DB: {e}")
-        raise e
-    print("length of results: ", len(results))
-    # Extract the necessary information from the results
-    for result in results:
-        print("Result: ", result)
-    return results
+        logging.error(f"Error in vector_search: {e}")
+        return []
 
 
 # update the user data container
