@@ -1,6 +1,86 @@
 """
 🚀 SHARED MCP SERVER - Long-lived background server for optimal performance
-This runs as a persistent server that multiple clients can connect to
+
+This server can be run in two modes:
+1. Embedded mode: Used internally by the banking application (default)
+2. Standalone MCP server: Can be run independently for external MCP clients
+
+=== STANDALONE MCP SERVER USAGE ===
+
+To run as a standalone MCP server that other applications can connect to:
+
+1. Navigate to the project directory:
+   cd /path/to/banking-multi-agent-workshop/python
+
+2. Set up environment variables (required for Azure services):
+   export AZURE_OPENAI_ENDPOINT="your-openai-endpoint"
+   export AZURE_OPENAI_API_KEY="your-api-key" 
+   export AZURE_COSMOS_DB_ENDPOINT="your-cosmos-endpoint"
+   export AZURE_COSMOS_DB_KEY="your-cosmos-key"
+   # OR use Azure Default Credentials (recommended for production)
+
+3. Install dependencies:
+   pip install -r src/app/requirements.txt
+
+4. Run the standalone MCP server:
+   python -m src.app.tools.mcp_server
+
+5. The server will start on stdio and provide these banking tools:
+   - bank_balance(account_number, tenantId, userId): Get account balance
+   - bank_transfer(fromAccount, toAccount, amount, tenantId, userId, thread_id): Transfer money
+   - get_transaction_history(account_number, start_date, end_date, tenantId, userId): Get transactions
+   - get_offer_information(prompt, type): Get banking product information
+   - create_account(account_holder, balance, tenantId, userId): Create new account
+   - service_request(recipientPhone, recipientEmail, requestSummary, tenantId, userId): Create service request
+   - get_branch_location(state): Get branch locations by state
+   - calculate_monthly_payment(loan_amount, years): Calculate loan payments
+   - transfer_to_sales_agent(): Transfer to sales agent
+   - transfer_to_customer_support_agent(): Transfer to support agent
+   - transfer_to_transactions_agent(): Transfer to transactions agent
+   - health_check(): Check server health
+
+=== MCP CLIENT CONNECTION ===
+
+To connect from another application using MCP protocol:
+
+Python example:
+```python
+import asyncio
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def connect_to_banking_server():
+    server_params = StdioServerParameters(
+        command="python",
+        args=["-m", "src.app.tools.mcp_server"],
+        cwd="/path/to/banking-multi-agent-workshop/python"
+    )
+    
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            # Initialize the session
+            await session.initialize()
+            
+            # List available tools
+            tools = await session.list_tools()
+            print("Available tools:", [tool.name for tool in tools.tools])
+            
+            # Call a tool
+            result = await session.call_tool(
+                "bank_balance",
+                arguments={"account_number": "Acc001", "tenantId": "Contoso", "userId": "Mark"}
+            )
+            print("Result:", result.content)
+```
+
+=== INTEGRATION NOTES ===
+
+- The server uses cached Azure OpenAI and Cosmos DB connections for optimal performance
+- All banking operations require tenantId and userId for multi-tenant security
+- The server automatically handles connection pooling and resource management
+- Supports both embedded (internal) and standalone (external) operation modes
+- Uses FastMCP framework for high-performance MCP protocol implementation
+
 """
 import asyncio
 import json
@@ -912,12 +992,22 @@ def get_cached_azure_services() -> Dict[str, Any]:
 def create_agent_transfer(agent_name: str):
     """Create agent transfer tool with proper Command structure - matches original mcp_server.py"""
     tool_name = f"transfer_to_{agent_name}"
+    
+    # Create proper description for each agent
+    agent_descriptions = {
+        "sales_agent": "Transfer the conversation to the sales agent for product offers and account opening assistance",
+        "customer_support_agent": "Transfer the conversation to the customer support agent for general inquiries and service requests", 
+        "transactions_agent": "Transfer the conversation to the transactions agent for account balances, transfers, and transaction history"
+    }
+    
+    description = agent_descriptions.get(agent_name, f"Transfer the conversation to the {agent_name.replace('_', ' ')}")
 
-    @mcp.tool(tool_name)
+    @mcp.tool(tool_name, description=description)
     def transfer_to_agent(
         tool_call_id: Annotated[str, InjectedToolCallId],
         **kwargs
     ):
+        """Transfer conversation to the specified agent"""
         state = kwargs.get("state", {})
         print(f"🔄 SHARED MCP: Transferring to {agent_name.replace('_', ' ')}...")
         
@@ -1031,6 +1121,323 @@ def health_check() -> str:
     """Health check with server uptime information"""
     uptime = (time.time() - _server_start_time)
     return f"🚀 SHARED MCP Server is healthy! Uptime: {uptime:.1f}s"
+
+@mcp.tool()
+@traceable
+def bank_transfer(fromAccount: str, toAccount: str, amount: float, tenantId: str, userId: str, thread_id: str) -> str:
+    """Transfer money between bank accounts with tenant isolation"""
+    
+    print(f"💸 SHARED MCP: Transferring ${amount} from {fromAccount} to {toAccount}")
+    
+    if amount <= 0:
+        return "Transfer amount must be greater than zero."
+    
+    if not fromAccount or not toAccount:
+        return "Both from and to account numbers are required."
+    
+    # Use cached services
+    azure_services = get_cached_azure_services()
+    
+    try:
+        # Check source account exists and has sufficient funds
+        from_account_data = azure_services['fetch_account_by_number'](fromAccount, tenantId, userId)
+        if not from_account_data:
+            return f"Source account {fromAccount} not found."
+        
+        if from_account_data['balance'] < amount:
+            return f"Insufficient funds in account {fromAccount}. Current balance: ${from_account_data['balance']}"
+        
+        # Check destination account exists
+        to_account_data = azure_services['fetch_account_by_number'](toAccount, tenantId, userId)
+        if not to_account_data:
+            return f"Destination account {toAccount} not found."
+        
+        # Get next transaction numbers
+        next_txn_number = azure_services['fetch_latest_transaction_number'](fromAccount)
+        
+        # Create debit transaction
+        from datetime import datetime
+        debit_txn_data = {
+            "id": f"{fromAccount}-{next_txn_number + 1}",
+            "tenantId": tenantId,
+            "accountId": from_account_data["accountId"],
+            "type": "BankTransaction",
+            "debitAmount": amount,
+            "creditAmount": 0,
+            "accountBalance": from_account_data['balance'] - amount,
+            "details": f"Transfer to {toAccount}",
+            "transactionDateTime": datetime.utcnow().isoformat() + "Z"
+        }
+        azure_services['create_transaction_record'](debit_txn_data)
+        
+        # Update source account balance
+        azure_services['patch_account_record'](tenantId, from_account_data["accountId"], from_account_data['balance'] - amount)
+        
+        # Get next transaction number for destination account
+        next_credit_txn_number = azure_services['fetch_latest_transaction_number'](toAccount)
+        
+        # Create credit transaction
+        credit_txn_data = {
+            "id": f"{toAccount}-{next_credit_txn_number + 1}",
+            "tenantId": tenantId,
+            "accountId": to_account_data["accountId"],
+            "type": "BankTransaction",
+            "debitAmount": 0,
+            "creditAmount": amount,
+            "accountBalance": to_account_data['balance'] + amount,
+            "details": f"Transfer from {fromAccount}",
+            "transactionDateTime": datetime.utcnow().isoformat() + "Z"
+        }
+        azure_services['create_transaction_record'](credit_txn_data)
+        
+        # Update destination account balance
+        azure_services['patch_account_record'](tenantId, to_account_data["accountId"], to_account_data['balance'] + amount)
+        
+        result = f"Successfully transferred ${amount} from {fromAccount} to {toAccount}."
+        print(f"✅ SHARED MCP: {result}")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Transfer failed: {str(e)}"
+        print(f"❌ SHARED MCP: {error_msg}")
+        return error_msg
+
+@mcp.tool()
+@traceable
+def get_transaction_history(account_number: str, start_date: str, end_date: str, tenantId: str, userId: str) -> str:
+    """Get transaction history for a specific account and date range with tenant isolation"""
+    
+    print(f"📊 SHARED MCP: Getting transaction history for {account_number}")
+    
+    if not account_number:
+        return "Account number is required."
+    
+    # Use cached services
+    azure_services = get_cached_azure_services()
+    
+    try:
+        from datetime import datetime
+        
+        # First, get the account by number to get its ID
+        account = azure_services['fetch_account_by_number'](account_number, tenantId, userId)
+        if not account:
+            return f"Account {account_number} not found."
+        
+        # Get the account ID
+        account_id = account.get('accountId') or account.get('id')
+        if not account_id:
+            return f"Could not retrieve account ID for {account_number}."
+        
+        # Parse dates if provided, otherwise use reasonable defaults
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        else:
+            start_dt = datetime.now().replace(day=1)  # First day of current month
+            
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        else:
+            end_dt = datetime.now()  # Today
+        
+        # Fetch transactions using the account ID
+        transactions = azure_services['fetch_transactions_by_date_range'](account_id, start_dt, end_dt)
+        
+        if not transactions:
+            return f"No transactions found for account {account_number} in the specified date range."
+        
+        # Format response
+        result = f"Transaction history for account {account_number}:\n"
+        for txn in transactions[:10]:  # Limit to 10 most recent
+            # Extract transaction details
+            date = txn.get('transactionDateTime', 'N/A')
+            if date != 'N/A':
+                try:
+                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    date = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+                except:
+                    pass
+            
+            # Determine transaction type and amount
+            debit = txn.get('debitAmount', 0)
+            credit = txn.get('creditAmount', 0)
+            if debit > 0:
+                amount_str = f"-${debit:,.2f}"
+                txn_type = "Debit"
+            elif credit > 0:
+                amount_str = f"+${credit:,.2f}"
+                txn_type = "Credit"
+            else:
+                amount_str = "$0.00"
+                txn_type = "Unknown"
+            
+            details = txn.get('details', 'No details')
+            balance = txn.get('accountBalance', 0)
+            
+            result += f"- {date}: {txn_type} {amount_str} - {details} (Balance: ${balance:,.2f})\n"
+        
+        print(f"✅ SHARED MCP: Retrieved {len(transactions)} transactions")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Failed to retrieve transaction history: {str(e)}"
+        print(f"❌ SHARED MCP: {error_msg}")
+        return error_msg
+
+@mcp.tool()
+def calculate_monthly_payment(loan_amount: float, years: int) -> str:
+    """Calculate monthly payment for a loan based on loan amount and years"""
+    
+    print(f"🧮 SHARED MCP: Calculating monthly payment for ${loan_amount} over {years} years")
+    
+    try:
+        if loan_amount <= 0:
+            return "Loan amount must be greater than zero."
+        
+        if years <= 0:
+            return "Loan term must be greater than zero years."
+        
+        # Calculate monthly payment with 5% annual interest rate
+        interest_rate = 0.05  # Annual interest rate (5%)
+        monthly_rate = interest_rate / 12  # Convert annual rate to monthly
+        total_payments = years * 12  # Total number of monthly payments
+
+        if monthly_rate == 0:
+            monthly_payment = loan_amount / total_payments
+        else:
+            monthly_payment = (loan_amount * monthly_rate * (1 + monthly_rate) ** total_payments) / \
+                            ((1 + monthly_rate) ** total_payments - 1)
+
+        monthly_payment = round(monthly_payment, 2)
+        
+        result = f"Monthly payment for a ${loan_amount:,} loan over {years} years at 5% APR: ${monthly_payment:,}"
+        print(f"✅ SHARED MCP: {result}")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Failed to calculate monthly payment: {str(e)}"
+        print(f"❌ SHARED MCP: {error_msg}")
+        return error_msg
+
+@mcp.tool()
+@traceable
+def service_request(recipientPhone: str, recipientEmail: str, requestSummary: str, tenantId: str, userId: str) -> str:
+    """Create a customer service request with tenant isolation"""
+    
+    print(f"📝 SHARED MCP: Creating service request for {recipientEmail}")
+    
+    try:
+        if not recipientPhone or not recipientEmail or not requestSummary:
+            return "Phone number, email address, and request summary are all required."
+        
+        # Use cached services
+        azure_services = get_cached_azure_services()
+        
+        from datetime import datetime
+        import uuid
+        
+        request_id = str(uuid.uuid4())
+        requested_on = datetime.utcnow().isoformat() + "Z"
+        request_annotations = [
+            requestSummary,
+            f"[{datetime.utcnow().strftime('%d-%m-%Y %H:%M:%S')}] : Urgent"
+        ]
+
+        service_request_data = {
+            "id": request_id,
+            "tenantId": tenantId,
+            "userId": userId,
+            "type": "ServiceRequest",
+            "requestedOn": requested_on,
+            "scheduledDateTime": "0001-01-01T00:00:00",
+            "accountId": "A1",
+            "srType": 0,
+            "recipientEmail": recipientEmail,
+            "recipientPhone": recipientPhone,
+            "debitAmount": 0,
+            "isComplete": False,
+            "requestAnnotations": request_annotations,
+            "fulfilmentDetails": None
+        }
+
+        azure_services['create_service_request_record'](service_request_data)
+        result = f"Service request created successfully with ID: {request_id}"
+        print(f"✅ SHARED MCP: {result}")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Failed to create service request: {str(e)}"
+        print(f"❌ SHARED MCP: {error_msg}")
+        return error_msg
+
+@mcp.tool()
+def get_branch_location(state: str) -> str:
+    """Get bank branch locations by state"""
+    
+    print(f"🏦 SHARED MCP: Getting branch locations for {state}")
+    
+    try:
+        state = state.strip()
+        
+        if not state:
+            return "State name is required."
+        
+        # Static branch location data
+        branches = {
+            "Alabama": {"Jefferson County": ["Central Bank - Birmingham", "Trust Bank - Hoover"],
+                        "Mobile County": ["Central Bank - Mobile", "Trust Bank - Prichard"]},
+            "Alaska": {"Anchorage": ["Central Bank - Anchorage", "Trust Bank - Eagle River"],
+                    "Fairbanks North Star Borough": ["Central Bank - Fairbanks", "Trust Bank - North Pole"]},
+            "Arizona": {"Maricopa County": ["Central Bank - Phoenix", "Trust Bank - Scottsdale"],
+                        "Pima County": ["Central Bank - Tucson", "Trust Bank - Oro Valley"]},
+            "Arkansas": {"Pulaski County": ["Central Bank - Little Rock", "Trust Bank - North Little Rock"],
+                        "Benton County": ["Central Bank - Bentonville", "Trust Bank - Rogers"]},
+            "California": {"Los Angeles County": ["Central Bank - Los Angeles", "Trust Bank - Long Beach"],
+                        "San Diego County": ["Central Bank - San Diego", "Trust Bank - Chula Vista"]},
+            "Colorado": {"Denver County": ["Central Bank - Denver", "Trust Bank - Aurora"],
+                        "El Paso County": ["Central Bank - Colorado Springs", "Trust Bank - Fountain"]},
+            "Connecticut": {"Fairfield County": ["Central Bank - Bridgeport", "Trust Bank - Stamford"],
+                            "Hartford County": ["Central Bank - Hartford", "Trust Bank - New Britain"]},
+            "Delaware": {"New Castle County": ["Central Bank - Wilmington", "Trust Bank - Newark"],
+                        "Sussex County": ["Central Bank - Seaford", "Trust Bank - Lewes"]},
+            "Florida": {"Miami-Dade County": ["Central Bank - Miami", "Trust Bank - Hialeah"],
+                        "Orange County": ["Central Bank - Orlando", "Trust Bank - Winter Park"]},
+            "Georgia": {"Fulton County": ["Central Bank - Atlanta", "Trust Bank - Sandy Springs"],
+                        "Cobb County": ["Central Bank - Marietta", "Trust Bank - Smyrna"]},
+            "Hawaii": {"Honolulu County": ["Central Bank - Honolulu", "Trust Bank - Pearl City"],
+                        "Hawaii County": ["Central Bank - Hilo", "Trust Bank - Kailua-Kona"]},
+            "Texas": {"Harris County": ["Central Bank - Houston", "Trust Bank - Pasadena"],
+                    "Dallas County": ["Central Bank - Dallas", "Trust Bank - Plano"]},
+            "New York": {"New York County": ["Central Bank - Manhattan", "Trust Bank - Brooklyn"],
+                        "Kings County": ["Central Bank - Brooklyn", "Trust Bank - Queens"]},
+            "Washington": {"King County": ["Central Bank - Seattle", "Trust Bank - Bellevue"],
+                        "Pierce County": ["Central Bank - Tacoma", "Trust Bank - Lakewood"]}
+        }
+        
+        # Case-insensitive state lookup
+        state_match = None
+        for state_key in branches.keys():
+            if state_key.lower() == state.lower():
+                state_match = state_key
+                break
+        
+        if not state_match:
+            available_states = ", ".join(sorted(branches.keys()))
+            return f"No branches found for '{state}'. Available states: {available_states}"
+        
+        # Format response
+        result = f"Branch locations in {state_match}:\n"
+        for county, branch_list in branches[state_match].items():
+            result += f"\n{county}:\n"
+            for branch in branch_list:
+                result += f"  - {branch}\n"
+        
+        print(f"✅ SHARED MCP: Found {len(branches[state_match])} counties with branches in {state_match}")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Failed to get branch locations: {str(e)}"
+        print(f"❌ SHARED MCP: {error_msg}")
+        return error_msg
 
 # Graceful shutdown handling
 def signal_handler(signum, frame):
