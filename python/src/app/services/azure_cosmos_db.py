@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from datetime import datetime
 from typing import List, Dict
 import re
@@ -53,8 +54,17 @@ except Exception as e:
     raise e
 
 
+def get_cosmos_client():
+    """Return the initialized Cosmos client for shared MCP server"""
+    return cosmos_client
+
+
 def vector_search(vectors, accountType):
+    start_time = time.time()
+    print(f"⏱️  COSMOS_DB: Starting vector search for accountType={accountType}, vector_dims={len(vectors) if vectors else 0}")
+    
     try:
+        query_start_time = time.time()
         results = offers_container.query_items(
             query='''
             SELECT TOP 3 c.offerId, c.text, c.name
@@ -72,7 +82,11 @@ def vector_search(vectors, accountType):
             populate_query_metrics=True
         )
         
+        query_duration_ms = (time.time() - query_start_time) * 1000
+        print(f"⏱️  COSMOS_DB: Query execution took {query_duration_ms:.2f}ms")
+        
         # Convert iterator to list with error handling
+        processing_start_time = time.time()
         result_list = []
         try:
             count = 0
@@ -85,6 +99,12 @@ def vector_search(vectors, accountType):
         except Exception as list_error:
             logging.error(f"Error processing results iterator: {list_error}")
             return []
+        
+        processing_duration_ms = (time.time() - processing_start_time) * 1000
+        total_duration_ms = (time.time() - start_time) * 1000
+        
+        print(f"⏱️  COSMOS_DB: Results processing took {processing_duration_ms:.2f}ms")
+        print(f"⏱️  COSMOS_DB: Total vector search took {total_duration_ms:.2f}ms, returned {len(result_list)} results")
         
         return result_list
         

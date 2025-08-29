@@ -1,13 +1,14 @@
 import logging
 import os
 import sys
+import time
 import uuid
 import asyncio
 import json
 from langchain_core.messages import ToolMessage, SystemMessage
 from langchain.schema import AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from typing import Literal
+from typing import Literal, Optional, List
 from langgraph.graph import StateGraph, START, MessagesState
 from langgraph.prebuilt import create_react_agent
 from langgraph.types import Command, interrupt
@@ -18,6 +19,12 @@ from src.app.services.azure_open_ai import model
 #from src.app.services.local_model import model  # Use local model for testing
 from src.app.services.azure_cosmos_db import DATABASE_NAME, checkpoint_container, chat_container, \
     update_chat_container, patch_active_agent
+
+# 🔄 Global persistent MCP client and cache
+_persistent_mcp_client: Optional[MultiServerMCPClient] = None
+_mcp_tools_cache: Optional[List] = None
+_native_tools_fallback_enabled = False  # 🚀 Using shared MCP server for optimal performance
+_shared_mcp_client = None  # 🚀 Enhanced shared client
 
 local_interactive_mode = False
 
@@ -39,24 +46,94 @@ def load_prompt(agent_name):
 
 # Tool filtering utility
 def filter_tools_by_prefix(tools, prefixes):
-    return [tool for tool in tools if any(tool.name.startswith(prefix) for prefix in prefixes)]
+    filtered = []
+    for tool in tools:
+        # Handle both dict and object formats for compatibility
+        if isinstance(tool, dict):
+            tool_name = tool.get('name', '')
+        else:
+            tool_name = getattr(tool, 'name', '')
+        
+        if any(tool_name.startswith(prefix) for prefix in prefixes):
+            filtered.append(tool)
+    return filtered
+
+# � Global persistent MCP client and cache
+_persistent_mcp_client: Optional[MultiServerMCPClient] = None
+_mcp_tools_cache: Optional[List] = None
+_native_tools_fallback_enabled = True  # 🚀 NEW: Enable native fallback for performance
+
+async def get_persistent_mcp_client():
+    """Get or create a persistent MCP client that is reused across all tool calls"""
+    global _persistent_mcp_client, _mcp_tools_cache, _shared_mcp_client
+    
+    if _persistent_mcp_client is None:
+        print("🔄 Initializing SHARED MCP client (high-performance setup)...")
+        start_time = time.time()
+        
+        try:
+            # 🚀 Use the new shared MCP client for optimal performance
+            from src.app.tools.mcp_client import get_shared_mcp_client
+            _shared_mcp_client = await get_shared_mcp_client()
+            
+            # Get tools from shared client
+            _mcp_tools_cache = await _shared_mcp_client.get_tools()
+            
+            # For compatibility, create a wrapper that looks like MultiServerMCPClient
+            class SharedMCPClientWrapper:
+                def __init__(self, shared_client):
+                    self.shared_client = shared_client
+                
+                async def get_tools(self):
+                    return await self.shared_client.get_tools()
+                
+                async def call_tool(self, tool_name: str, arguments: dict):
+                    return await self.shared_client.call_tool(tool_name, arguments)
+                
+                async def close(self):
+                    await self.shared_client.cleanup()
+            
+            _persistent_mcp_client = SharedMCPClientWrapper(_shared_mcp_client)
+            
+            setup_duration = (time.time() - start_time) * 1000
+            print(f"✅ SHARED MCP client initialized in {setup_duration:.2f}ms")
+            print(f"🛠️  Cached {len(_mcp_tools_cache)} tools for reuse")
+            
+            # Log cached tools
+            print("[DEBUG] Cached tools from SHARED MCP server:")
+            for tool in _mcp_tools_cache:
+                tool_name = tool.get('name') if isinstance(tool, dict) else getattr(tool, 'name', 'unknown')
+                print("  -", tool_name)
+                
+        except Exception as e:
+            print(f"❌ Failed to initialize SHARED MCP client: {e}")
+            print("🔄 Falling back to lightweight MCP server...")
+            
+            # Fallback to lightweight MCP server
+            try:
+                _persistent_mcp_client = MultiServerMCPClient({
+                    "banking_tools": {
+                        "command": "python3",
+                        "args": ["-m", "src.app.tools.lightweight_mcp_server"], 
+                        "transport": "stdio",
+                    },
+                })
+                
+                _mcp_tools_cache = await _persistent_mcp_client.get_tools()
+                print(f"✅ Lightweight MCP fallback activated")
+            except Exception as fallback_error:
+                print(f"❌ Lightweight MCP fallback also failed: {fallback_error}")
+                raise Exception("Both shared and lightweight MCP initialization failed")
+    
+    return _persistent_mcp_client, _mcp_tools_cache
 
 async def setup_agents():
     global coordinator_agent, customer_support_agent, transactions_agent, sales_agent
 
-    print("Starting unified Banking Tools MCP client...")
-    mcp_client = MultiServerMCPClient({
-        "banking_tools": {
-            "command": "python",
-            "args": ["-m", "src.app.tools.mcp_server"], 
-            "transport": "stdio",
-        },
-    })
-
-    all_tools = await mcp_client.get_tools()
-    print("[DEBUG] All tools registered from unified MCP server:")
-    for tool in all_tools:
-        print("  -", tool.name)
+    print("Setting up agents with persistent MCP client...")
+    
+    # Get persistent client and cached tools
+    mcp_client, all_tools = await get_persistent_mcp_client()
 
     # Assign tools to agents based on tool name prefix
     coordinator_tools = filter_tools_by_prefix(all_tools, ["transfer_to_"])
@@ -107,7 +184,57 @@ async def call_coordinator_agent(state: MessagesState, config) -> Command[Litera
         return Command(update=state, goto=activeAgent)
     else:
         response = await coordinator_agent.ainvoke(state)
-        return Command(update=response, goto="human")
+        
+        # Check if any tool responses indicate a transfer request
+        transfer_target = None
+        print(f"🔧 DEBUG: Checking response for transfer requests")
+        print(f"🔧 DEBUG: Response type: {type(response)}")
+        print(f"🔧 DEBUG: Response contents: {response}")
+        
+        # Check if this is a LangGraph AddableValuesDict response
+        if isinstance(response, dict):
+            print(f"🔧 DEBUG: Response is dict with keys: {list(response.keys())}")
+            # Look for messages in the response
+            if 'messages' in response and response['messages']:
+                print(f"🔧 DEBUG: Found {len(response['messages'])} messages in response dict")
+                for i, message in enumerate(response['messages']):
+                    print(f"🔧 DEBUG: Message {i}: type={type(message)}")
+                    if hasattr(message, 'content'):
+                        print(f"🔧 DEBUG: Message {i} content: {message.content}")
+                        if isinstance(message.content, str) and message.content.strip():
+                            try:
+                                import json
+                                # Try to parse JSON response
+                                content_data = json.loads(message.content)
+                                if content_data.get("goto"):
+                                    transfer_target = content_data["goto"]
+                                    print(f"🔄 COORDINATOR: Found JSON transfer in message content: {transfer_target}")
+                                    break
+                            except (json.JSONDecodeError, TypeError, AttributeError):
+                                # Check for old format
+                                if message.content.startswith("TRANSFER_REQUEST:"):
+                                    transfer_target = message.content.split(":", 1)[1]
+                                    print(f"� COORDINATOR: Found legacy transfer: {transfer_target}")
+                                    break
+                    
+                    # Check if message has tool_calls
+                    if hasattr(message, 'tool_calls') and message.tool_calls:
+                        print(f"🔧 DEBUG: Message {i} has {len(message.tool_calls)} tool calls")
+                        for j, tool_call in enumerate(message.tool_calls):
+                            print(f"� DEBUG: Tool call {j}: {tool_call}")
+            
+            # Also check for any other relevant keys in response
+            for key, value in response.items():
+                if key != 'messages':
+                    print(f"� DEBUG: Response[{key}]: {value} (type: {type(value)})")
+        
+        else:
+            print(f"🔧 DEBUG: Response is not a dict")
+        
+        if transfer_target:
+            return Command(update=response, goto=transfer_target)
+        else:
+            return Command(update=response, goto="human")
 
 
 @traceable(run_type="llm")
@@ -121,10 +248,21 @@ async def call_customer_support_agent(state: MessagesState, config) -> Command[L
 
 @traceable(run_type="llm")
 async def call_sales_agent(state: MessagesState, config) -> Command[Literal["sales_agent", "human"]]:
+    start_time = time.time()
+    print("⏱️  LANGGRAPH: Starting sales agent execution")
+    
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "sales_agent")
+    
+    agent_start_time = time.time()
     response = await sales_agent.ainvoke(state, config)
+    agent_duration_ms = (time.time() - agent_start_time) * 1000
+    
+    total_duration_ms = (time.time() - start_time) * 1000
+    print(f"⏱️  LANGGRAPH: Sales agent invoke took {agent_duration_ms:.2f}ms")
+    print(f"⏱️  LANGGRAPH: Total sales agent call took {total_duration_ms:.2f}ms")
+    
     return Command(update=response, goto="human")
 
 
@@ -141,12 +279,12 @@ async def call_transactions_agent(state: MessagesState, config) -> Command[Liter
     })
     response = await transactions_agent.ainvoke(state, config)
     # explicitly remove the system message added above from response
-    print(f"DEBUG: transactions_agent response: {response}")
     if isinstance(response, dict) and "messages" in response:
         response["messages"] = [
             msg for msg in response["messages"]
             if not isinstance(msg, SystemMessage)
         ]
+    
     return Command(update=response, goto="human")
 
 
@@ -214,6 +352,35 @@ builder.add_conditional_edges(
 
 checkpointer = CosmosDBSaver(database_name=DATABASE_NAME, container_name=checkpoint_container)
 graph = builder.compile(checkpointer=checkpointer)
+
+async def cleanup_persistent_mcp_client():
+    """Properly shutdown the persistent MCP client and shared MCP client"""
+    global _persistent_mcp_client, _shared_mcp_client
+    
+    print("🔄 Shutting down MCP clients...")
+    
+    # Clean up shared MCP client first (higher priority)
+    if _shared_mcp_client:
+        try:
+            await _shared_mcp_client.cleanup()
+            _shared_mcp_client = None
+            print("✅ Shared MCP client cleaned up")
+        except Exception as e:
+            print(f"⚠️ Error cleaning up shared MCP client: {e}")
+    
+    # Then clean up persistent MCP client
+    if _persistent_mcp_client:
+        try:
+            if hasattr(_persistent_mcp_client, 'close'):
+                await _persistent_mcp_client.close()
+            elif hasattr(_persistent_mcp_client, '__aenter__'):
+                # If it's an async context manager, we might need different handling
+                pass
+            print("✅ Persistent MCP client shutdown complete")
+        except Exception as e:
+            print(f"⚠️  Error during MCP client shutdown: {e}")
+        finally:
+            _persistent_mcp_client = None
 
 
 def interactive_chat():
