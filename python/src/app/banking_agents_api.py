@@ -20,6 +20,7 @@ from langgraph_checkpoint_cosmosdb import CosmosDBSaver
 from langgraph.graph.state import CompiledStateGraph
 from starlette.middleware.cors import CORSMiddleware
 from src.app.banking_agents import graph, checkpointer
+from src.app.tools.mcp_client import set_mcp_context  # Enhanced MCP context
 from src.app.services.azure_cosmos_db import update_chat_container, patch_active_agent, \
     fetch_chat_container_by_tenant_and_user, \
     fetch_chat_container_by_session, delete_userdata_item, debug_container, update_users_container, \
@@ -543,6 +544,14 @@ async def get_chat_completion(
 ):
     if not request_body.strip():
         raise HTTPException(status_code=400, detail="Request body cannot be empty")
+
+    # 🚀 SET MCP CONTEXT - Fix LLM parameter issues with automatic injection
+    set_mcp_context(
+        tenantId=tenantId,
+        userId=userId,
+        thread_id=sessionId
+    )
+    print(f"🔧 MCP CONTEXT SET: tenantId='{tenantId}', userId='{userId}', thread_id='{sessionId}'")
 
     # Retrieve last checkpoint
     config = {"configurable": {"thread_id": sessionId, "checkpoint_ns": "", "userId": userId, "tenantId": tenantId}}

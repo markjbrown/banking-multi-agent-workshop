@@ -7,10 +7,34 @@ import subprocess
 import time
 import os
 import signal
+import contextvars
 from typing import Optional, Dict, Any, List
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import StructuredTool
 from src.app.tools.mcp_server import get_cached_server_instance
+
+# Context variables for tenant/user information
+TENANT_CONTEXT = contextvars.ContextVar('tenant_context', default=None)
+USER_CONTEXT = contextvars.ContextVar('user_context', default=None) 
+THREAD_CONTEXT = contextvars.ContextVar('thread_context', default=None)
+
+def set_mcp_context(tenantId: Optional[str], userId: Optional[str], thread_id: Optional[str]):
+    """Set the MCP context for automatic parameter injection"""
+    if tenantId:
+        TENANT_CONTEXT.set(tenantId)
+    if userId:
+        USER_CONTEXT.set(userId)
+    if thread_id:
+        THREAD_CONTEXT.set(thread_id)
+    print(f"🔧 MCP CONTEXT: Set context - tenantId='{tenantId}', userId='{userId}', thread_id='{thread_id}'")
+
+def get_mcp_context():
+    """Get the current MCP context"""
+    return {
+        'tenantId': TENANT_CONTEXT.get(),
+        'userId': USER_CONTEXT.get(),
+        'thread_id': THREAD_CONTEXT.get()
+    }
 
 class SharedMCPClient:
     """Enhanced MCP client with connection pooling and management"""
@@ -129,10 +153,10 @@ class SharedMCPClient:
                         
                     print(f"🔄 ENHANCED MCP: Converting tool {tool_name}")
                     
-                    # Create a proper tool function with closure to capture tool_name  
-                    def create_tool_function(captured_tool_name):
+                    # Create a proper tool function with closure to capture tool_name and self reference
+                    def create_tool_function(captured_tool_name, client_instance):
                         async def tool_execution(*args, **kwargs):
-                            """Execute tool through direct server connection."""
+                            """Execute tool through context-aware call_tool method."""
                             print(f"🚀 TOOL EXECUTION: Calling {captured_tool_name} with args={args}, kwargs={kwargs}")
                             
                             # Enhanced parameter mapping for tools with specific parameter needs
@@ -169,7 +193,9 @@ class SharedMCPClient:
                                     print(f"🔧 DEBUG: Generic parameter mapping for {captured_tool_name} - input: {args[0]}")
                             
                             print(f"🔧 DEBUG: Final arguments passed: {kwargs}")
-                            result = await server_instance.call_tool_directly(captured_tool_name, kwargs)
+                            
+                            # 🔧 CRITICAL FIX: Use context-aware call_tool instead of direct server call
+                            result = await client_instance.call_tool(captured_tool_name, kwargs)
                             print(f"🔧 DEBUG: tool_execution received result: {result} (type: {type(result)})")
                             return result
                         
@@ -177,8 +203,8 @@ class SharedMCPClient:
                         tool_execution.__name__ = captured_tool_name
                         return tool_execution
                     
-                    # Create the actual tool function
-                    tool_func = create_tool_function(tool_name)
+                    # Create the actual tool function with self reference for context injection
+                    tool_func = create_tool_function(tool_name, self)
                     
                     # Get parameter schema if available
                     parameters = tool_dict.get('parameters', {})
@@ -338,6 +364,37 @@ class SharedMCPClient:
         
         call_start = time.time()
         print(f"📞 ENHANCED MCP: DIRECT calling tool '{tool_name}' (zero subprocess overhead)")
+        print(f"🔧 DEBUG: Tool arguments received: {arguments}")
+        
+        # 🚀 AUTOMATIC CONTEXT INJECTION - Fix the LLM parameter issue
+        context = get_mcp_context()
+        print(f"🔧 CONTEXT INJECTION: Retrieved context = {context}")
+        tools_needing_context = ['bank_balance', 'bank_transfer', 'get_transaction_history', 'create_account', 'service_request']
+        
+        if tool_name in tools_needing_context:
+            print(f"🔧 CONTEXT INJECTION: Tool '{tool_name}' needs context parameters")
+            print(f"🔧 CONTEXT INJECTION: Current arguments before injection: {arguments}")
+            
+            # Inject missing context parameters if available
+            if context.get('tenantId') and 'tenantId' not in arguments:
+                arguments['tenantId'] = context['tenantId']
+                print(f"🔧 CONTEXT INJECTION: Added tenantId='{context['tenantId']}'")
+            else:
+                print(f"🔧 CONTEXT INJECTION: tenantId not injected - context has: '{context.get('tenantId')}', args has: {'tenantId' in arguments}")
+            
+            if context.get('userId') and 'userId' not in arguments:
+                arguments['userId'] = context['userId']  
+                print(f"🔧 CONTEXT INJECTION: Added userId='{context['userId']}'")
+            else:
+                print(f"🔧 CONTEXT INJECTION: userId not injected - context has: '{context.get('userId')}', args has: {'userId' in arguments}")
+            
+            if context.get('thread_id') and 'thread_id' not in arguments and tool_name in ['bank_balance', 'bank_transfer', 'get_transaction_history']:
+                arguments['thread_id'] = context['thread_id']
+                print(f"🔧 CONTEXT INJECTION: Added thread_id='{context['thread_id']}'")
+            
+            print(f"🔧 CONTEXT INJECTION: Final arguments with context: {arguments}")
+        else:
+            print(f"🔧 CONTEXT INJECTION: Tool '{tool_name}' does not need context parameters")
         
         try:
             # 🚀 BREAKTHROUGH: Direct tool execution with cached services

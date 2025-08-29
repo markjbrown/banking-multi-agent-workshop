@@ -73,7 +73,7 @@ async def get_persistent_mcp_client():
         
         try:
             # 🚀 Use the new shared MCP client for optimal performance
-            from src.app.tools.mcp_client import get_shared_mcp_client
+            from src.app.tools.mcp_client import get_shared_mcp_client, set_mcp_context, get_mcp_context
             _shared_mcp_client = await get_shared_mcp_client()
             
             # Get tools from shared client
@@ -240,9 +240,26 @@ async def call_coordinator_agent(state: MessagesState, config) -> Command[Litera
 @traceable(run_type="llm")
 async def call_customer_support_agent(state: MessagesState, config) -> Command[Literal["customer_support_agent", "human"]]:
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
+    userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
+    tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "customer_support_agent")
+    
+    from langchain_core.messages import SystemMessage
+    
+    # Add system message with tenant/user context for the LLM to use when calling tools
+    system_message = SystemMessage(content=f"When calling service_request tool, always include these parameters: tenantId='{tenantId}', userId='{userId}'")
+    state["messages"].append(system_message)
+    
     response = await customer_support_agent.ainvoke(state)
+    
+    # Remove the system message added above from response
+    if isinstance(response, dict) and "messages" in response:
+        response["messages"] = [
+            msg for msg in response["messages"]
+            if not isinstance(msg, SystemMessage)
+        ]
+    
     return Command(update=response, goto="human")
 
 
@@ -252,12 +269,27 @@ async def call_sales_agent(state: MessagesState, config) -> Command[Literal["sal
     print("⏱️  LANGGRAPH: Starting sales agent execution")
     
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
+    userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
+    tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "sales_agent")
+    
+    from langchain_core.messages import SystemMessage
+    
+    # Add system message with tenant/user context for the LLM to use when calling tools
+    system_message = SystemMessage(content=f"When calling create_account tool, always include these parameters: tenantId='{tenantId}', userId='{userId}'")
+    state["messages"].append(system_message)
     
     agent_start_time = time.time()
     response = await sales_agent.ainvoke(state, config)
     agent_duration_ms = (time.time() - agent_start_time) * 1000
+    
+    # Remove the system message added above from response
+    if isinstance(response, dict) and "messages" in response:
+        response["messages"] = [
+            msg for msg in response["messages"]
+            if not isinstance(msg, SystemMessage)
+        ]
     
     total_duration_ms = (time.time() - start_time) * 1000
     print(f"⏱️  LANGGRAPH: Sales agent invoke took {agent_duration_ms:.2f}ms")
@@ -273,10 +305,17 @@ async def call_transactions_agent(state: MessagesState, config) -> Command[Liter
     tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
     if local_interactive_mode:
         patch_active_agent("cli-test", "cli-test", thread_id, "transactions_agent")
-    state["messages"].append({
-        "role": "system",
-        "content": f"When calling bank_transfer tool, be sure to pass in tenantId='{tenantId}', userId='{userId}', thread_id='{thread_id}'"
-    })
+    
+    # Add system message with tenant/user context for the LLM to use when calling tools
+    from langchain_core.messages import SystemMessage
+    
+    system_msg_content = f"IMPORTANT: When calling the bank_balance, bank_transfer, or get_transaction_history tools, you MUST always include these exact parameters: tenantId='{tenantId}', userId='{userId}', thread_id='{thread_id}'. Do not call these tools without all required parameters."
+    print(f"🔧 DEBUG: Adding system message to transactions agent: {system_msg_content}")
+    
+    # Add as proper SystemMessage object 
+    system_message = SystemMessage(content=system_msg_content)
+    state["messages"].append(system_message)
+    
     response = await transactions_agent.ainvoke(state, config)
     # explicitly remove the system message added above from response
     if isinstance(response, dict) and "messages" in response:

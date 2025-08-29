@@ -94,7 +94,28 @@ class SharedMCPServerInstance:
             {
                 "name": "create_account",
                 "description": "Create a new bank account for the user",
-                "parameters": {}
+                "parameters": {
+                    "account_holder": {
+                        "type": "string",
+                        "description": "Name of the account holder",
+                        "required": True
+                    },
+                    "balance": {
+                        "type": "number", 
+                        "description": "Initial account balance",
+                        "required": True
+                    },
+                    "tenantId": {
+                        "type": "string",
+                        "description": "Tenant ID for the account",
+                        "required": True
+                    },
+                    "userId": {
+                        "type": "string",
+                        "description": "User ID for the account",
+                        "required": True
+                    }
+                }
             },
             {
                 "name": "bank_balance",
@@ -103,6 +124,16 @@ class SharedMCPServerInstance:
                     "account_number": {
                         "type": "string", 
                         "description": "The account number to check balance for (e.g., 'Acc001', '123', 'ABC123')",
+                        "required": True
+                    },
+                    "tenantId": {
+                        "type": "string",
+                        "description": "Tenant ID for the account lookup",
+                        "required": True
+                    },
+                    "userId": {
+                        "type": "string", 
+                        "description": "User ID for the account lookup",
                         "required": True
                     }
                 }
@@ -273,9 +304,25 @@ class SharedMCPServerInstance:
     
     async def _call_bank_balance_direct(self, arguments: dict) -> str:
         """Direct bank balance call with cached services"""
+        print(f"🔧 DEBUG: _call_bank_balance_direct called with arguments: {arguments}")
+        print(f"🔧 DEBUG: Arguments type: {type(arguments)}")
+        print(f"🔧 DEBUG: Arguments keys: {list(arguments.keys()) if hasattr(arguments, 'keys') else 'No keys method'}")
+        
         account_number = arguments.get("account_number", "")
-        tenant_id = "Contoso"  # Hardcoded for now
-        user_id = "Mark"       # Hardcoded for now
+        tenant_id = arguments.get("tenantId", "")
+        user_id = arguments.get("userId", "")
+        
+        print(f"🔧 DEBUG: Extracted parameters:")
+        print(f"  - account_number: '{account_number}' (found: {'account_number' in arguments})")
+        print(f"  - tenantId: '{tenant_id}' (found: {'tenantId' in arguments})")
+        print(f"  - userId: '{user_id}' (found: {'userId' in arguments})")
+        print(f"🔧 DEBUG: Raw tenantId lookup: {arguments.get('tenantId', 'NOT_FOUND')}")
+        print(f"🔧 DEBUG: Raw userId lookup: {arguments.get('userId', 'NOT_FOUND')}")
+        
+        if not tenant_id or not user_id:
+            error_msg = f"Error: tenantId and userId are required for account lookup. Received tenantId='{tenant_id}', userId='{user_id}'"
+            print(f"❌ DEBUG: {error_msg}")
+            return error_msg
         
         # Use cached fetch_account_by_number function (it's synchronous, not async)
         fetch_account_by_number = self.azure_services['fetch_account_by_number']
@@ -310,9 +357,45 @@ class SharedMCPServerInstance:
     
     async def _call_create_account_direct(self, arguments: dict) -> str:
         """Direct account creation call"""
-        # Simple implementation for now
-        account_type = arguments.get("account_type", "checking")
-        return f"Account creation request received for {account_type} account. Please visit a branch to complete the process."
+        account_holder = arguments.get("account_holder", "")
+        balance = float(arguments.get("balance", 0))
+        tenant_id = arguments.get("tenantId", "")
+        user_id = arguments.get("userId", "")
+        
+        if not account_holder:
+            return "Error: account_holder is required."
+        if not tenant_id or not user_id:
+            return "Error: tenantId and userId are required for account creation."
+        
+        try:
+            # Get service functions
+            create_account_record = self.azure_services['create_account_record']
+            fetch_latest_account_number = self.azure_services['fetch_latest_account_number']
+            
+            account_number = fetch_latest_account_number()
+            if account_number is None:
+                account_number = 1
+            else:
+                account_number += 1
+
+            account_data = {
+                "id": f"{account_number}",
+                "accountId": f"A{account_number}",
+                "tenantId": tenant_id,
+                "userId": user_id,
+                "name": "Account",
+                "type": "BankAccount",
+                "accountName": account_holder,
+                "balance": balance,
+                "startDate": "01-01-2025",
+                "accountDescription": "Banking account",
+            }
+            
+            create_account_record(account_data)
+            return f"Successfully created account {account_number} for {account_holder} with balance ${balance}"
+            
+        except Exception as e:
+            return f"Failed to create account: {str(e)}"
     
     async def _call_transfer_to_transactions_agent_direct(self, *args, **kwargs) -> str:
         """Direct call to transfer to transactions agent"""
@@ -344,8 +427,8 @@ class SharedMCPServerInstance:
         from_account = arguments.get("fromAccount", "")
         to_account = arguments.get("toAccount", "")
         amount = float(arguments.get("amount", 0))
-        tenant_id = arguments.get("tenantId", "Contoso")  # Default for now
-        user_id = arguments.get("userId", "Mark")       # Default for now
+        tenant_id = arguments.get("tenantId", "")  # Context injection provides this
+        user_id = arguments.get("userId", "")     # Context injection provides this
         
         if amount <= 0:
             return "Transfer amount must be greater than zero."
@@ -428,8 +511,8 @@ class SharedMCPServerInstance:
         account_number = arguments.get("account_number", "")
         start_date = arguments.get("start_date", "")
         end_date = arguments.get("end_date", "")
-        tenant_id = arguments.get("tenantId", "Contoso")  # Default for now
-        user_id = arguments.get("userId", "Mark")       # Default for now
+        tenant_id = arguments.get("tenantId", "")  # Context injection provides this
+        user_id = arguments.get("userId", "")     # Context injection provides this
         
         if not account_number:
             return "Account number is required."
@@ -552,8 +635,8 @@ class SharedMCPServerInstance:
             recipient_phone = arguments.get("recipientPhone", "")
             recipient_email = arguments.get("recipientEmail", "")
             request_summary = arguments.get("requestSummary", "")
-            tenant_id = arguments.get("tenantId", "Contoso")  # Default for now
-            user_id = arguments.get("userId", "Mark")       # Default for now
+            tenant_id = arguments.get("tenantId", "")  # Context injection provides this
+            user_id = arguments.get("userId", "")     # Context injection provides this
             
             if not recipient_phone or not recipient_email or not request_summary:
                 return "Phone number, email address, and request summary are all required."
@@ -884,7 +967,7 @@ def get_offer_information(user_prompt: str, accountType: str) -> list[dict[str, 
 
 @mcp.tool()
 @traceable
-def create_account(account_holder: str, balance: float, config: RunnableConfig) -> str:
+def create_account(account_holder: str, balance: float, tenantId: str, userId: str) -> str:
     """Create a new bank account for a user with optimized performance"""
     
     print(f"💰 SHARED MCP: Creating account for {account_holder}")
@@ -893,9 +976,8 @@ def create_account(account_holder: str, balance: float, config: RunnableConfig) 
         # Use cached services
         azure_services = get_cached_azure_services()
         
-        thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
-        userId = config["configurable"].get("userId", "UNKNOWN_USER_ID") 
-        tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
+        if not tenantId or not userId:
+            return "Error: tenantId and userId are required for account creation."
         
         account_number = azure_services['fetch_latest_account_number']()
         if account_number is None:
@@ -928,15 +1010,14 @@ def create_account(account_holder: str, balance: float, config: RunnableConfig) 
 
 @mcp.tool()
 @traceable
-def bank_balance(account_number: str) -> str:
+def bank_balance(account_number: str, tenantId: str, userId: str) -> str:
     """Retrieve the balance for a specific bank account."""
     # Get cached Azure services
     azure_services = get_cached_azure_services()
     fetch_account_by_number = azure_services['fetch_account_by_number']
     
-    # TODO: Get tenant/user context from somewhere else
-    tenantId = "Contoso"  # Hardcoded for now
-    userId = "Mark"       # Hardcoded for now
+    if not tenantId or not userId:
+        return "Error: tenantId and userId are required for account lookup."
 
     account = fetch_account_by_number(account_number, tenantId, userId)
     if not account:
