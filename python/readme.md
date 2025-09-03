@@ -19,7 +19,8 @@ This is a sample that exposes turn-by-turn conversation with a multi-agent banki
    - Always route to coordinator agent first, which hands over the conversation to the appropriate sub-agent.
    - Each sub-agent either:
      - Routes to another agent.
-     - Calls a tool (functionality) - see files in `/app/tools` .
+     - Calls a tool (functionality). Tools are implemented in a single unified [MCP](https://en.wikipedia.org/wiki/Model_Context_Protocol) server that can be used by all agents - see  `/app/tools/mcp_server.py`. The server is started using `MultiServerMCPClient` (part of `langchain-mcp-adapters` package) in `banking_agents.py`. The MCP server could also be started and consumed separately by a different application, but in this sample it is started as part of the application.
+       
 1. `banking_agents_api_cli.py`: This is a simple CLI tool that consumes the FastAPI server endpoint. It will:
    - Creates a sessionId using `POST /tenant/{tenantId}/user/{userId}/sessions` endpoint
    - Sends messages to the agent using `POST /tenant/{tenantId}/user/{userId}/sessions/{sessionId}/completion` endpoint and prints the responses to the console

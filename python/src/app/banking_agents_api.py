@@ -20,12 +20,18 @@ from langgraph_checkpoint_cosmosdb import CosmosDBSaver
 from langgraph.graph.state import CompiledStateGraph
 from starlette.middleware.cors import CORSMiddleware
 from src.app.banking_agents import graph, checkpointer
+from src.app.tools.mcp_client import set_mcp_context  # Enhanced MCP context
 from src.app.services.azure_cosmos_db import update_chat_container, patch_active_agent, \
     fetch_chat_container_by_tenant_and_user, \
     fetch_chat_container_by_session, delete_userdata_item, debug_container, update_users_container, \
     update_account_container, update_offers_container, store_chat_history, update_active_agent_in_latest_message, \
     chat_container, fetch_chat_history_by_session, delete_chat_history_by_session
 import logging
+
+import asyncio
+from src.app.banking_agents import setup_agents
+
+
 
 # Setup logging
 logging.basicConfig(level=logging.ERROR)
@@ -53,6 +59,13 @@ def get_compiled_graph():
 
 app = fastapi.FastAPI(title="Cosmos DB Multi-Agent Banking API", openapi_url="/cosmos-multi-agent-api.json")
 
+@app.on_event("startup")
+async def initialize_agents():
+    await setup_agents()
+
+@app.get("/")
+def health_check():
+    return {"status": "MCP agent system is up"}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -134,25 +147,29 @@ def store_debug_log(sessionId, tenantId, userId, response_data):
             if "messages" in details:
                 for msg in details["messages"]:
                     if hasattr(msg, "response_metadata"):
-                        metadata = msg.response_metadata
-                        finish_reason = metadata.get("finish_reason", finish_reason)
-                        model_name = metadata.get("model_name", model_name)
-                        system_fingerprint = metadata.get("system_fingerprint", system_fingerprint)
-                        input_tokens = metadata.get("token_usage", {}).get("prompt_tokens", input_tokens)
-                        output_tokens = metadata.get("token_usage", {}).get("completion_tokens", output_tokens)
-                        total_tokens = metadata.get("token_usage", {}).get("total_tokens", total_tokens)
-                        cached_tokens = metadata.get("token_usage", {}).get("prompt_tokens_details", {}).get(
-                            "cached_tokens", cached_tokens)
-                        logprobs = metadata.get("logprobs", logprobs)
-                        content_filter_results = metadata.get("content_filter_results", content_filter_results)
+                        metadata = getattr(msg, "response_metadata", None)
+                        if metadata:
+                            finish_reason = metadata.get("finish_reason", finish_reason)
+                            model_name = metadata.get("model_name", model_name)
+                            system_fingerprint = metadata.get("system_fingerprint", system_fingerprint)
 
-                        if "tool_calls" in msg.additional_kwargs:
-                            tool_calls.extend(msg.additional_kwargs["tool_calls"])
-                            transfer_success = any(
-                                call.get("name", "").startswith("transfer_to_") for call in tool_calls)
-                            previous_agent = agent_selected
-                            agent_selected = tool_calls[-1].get("name", "").replace("transfer_to_",
-                                                                                    "") if tool_calls else agent_selected
+                            token_usage = metadata.get("token_usage", {}) or {}
+                            input_tokens = token_usage.get("prompt_tokens", input_tokens)
+                            output_tokens = token_usage.get("completion_tokens", output_tokens)
+                            total_tokens = token_usage.get("total_tokens", total_tokens)
+
+                            prompt_details = token_usage.get("prompt_tokens_details", {}) or {}
+                            cached_tokens = prompt_details.get("cached_tokens", cached_tokens)
+
+                            logprobs = metadata.get("logprobs", logprobs)
+                            content_filter_results = metadata.get("content_filter_results", content_filter_results)
+
+                            if "tool_calls" in msg.additional_kwargs:
+                                tool_calls.extend(msg.additional_kwargs["tool_calls"])
+                                transfer_success = any(
+                                    call.get("name", "").startswith("transfer_to_") for call in tool_calls)
+                                previous_agent = agent_selected
+                                agent_selected = tool_calls[-1].get("name", "").replace("transfer_to_", "") if tool_calls else agent_selected
 
     property_bag = [
         {"key": "agent_selected", "value": agent_selected, "timeStamp": timestamp},
@@ -183,6 +200,8 @@ def store_debug_log(sessionId, tenantId, userId, response_data):
 
     debug_container.create_item(debug_entry)
     return debug_log_id
+
+
 
 
 def create_thread(tenantId: str, userId: str):
@@ -439,6 +458,7 @@ def extract_relevant_messages(debug_lod_id, last_active_agent, response_data, te
                 last_agent_name = list(last_agent_node.keys())[0]
             break
 
+    print(f"Last active agent: {last_agent_name}")
     # storing the last active agent in the session container so that we can retrieve it later
     # and deterministically route the incoming message directly to the agent that asked the question.
     patch_active_agent(tenantId, userId, sessionId, last_agent_name)
@@ -525,6 +545,14 @@ async def get_chat_completion(
     if not request_body.strip():
         raise HTTPException(status_code=400, detail="Request body cannot be empty")
 
+    # 🚀 SET MCP CONTEXT - Fix LLM parameter issues with automatic injection
+    set_mcp_context(
+        tenantId=tenantId,
+        userId=userId,
+        thread_id=sessionId
+    )
+    print(f"🔧 MCP CONTEXT SET: tenantId='{tenantId}', userId='{userId}', thread_id='{sessionId}'")
+
     # Retrieve last checkpoint
     config = {"configurable": {"thread_id": sessionId, "checkpoint_ns": "", "userId": userId, "tenantId": tenantId}}
     checkpoints = list(checkpointer.list(config))
@@ -533,7 +561,7 @@ async def get_chat_completion(
     if not checkpoints:
         # No previous state, start fresh
         new_state = {"messages": [{"role": "user", "content": request_body}]}
-        response_data = workflow.invoke(new_state, config, stream_mode="updates")
+        response_data = await workflow.ainvoke(new_state, config, stream_mode="updates")
     else:
         # Resume from last checkpoint
         last_checkpoint = checkpoints[-1]
@@ -551,7 +579,7 @@ async def get_chat_completion(
                     break
 
         last_state["langgraph_triggers"] = [f"resume:{last_active_agent}"]
-        response_data = workflow.invoke(last_state, config, stream_mode="updates")
+        response_data = await workflow.ainvoke(last_state, config, stream_mode="updates")
 
     debug_log_id = store_debug_log(sessionId, tenantId, userId, response_data)
 
