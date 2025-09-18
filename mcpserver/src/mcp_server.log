@@ -1,0 +1,24 @@
+nohup: ignoring input
+INFO:     Started server process [223611]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+[DEBUG] MCP Server: Connected to Cosmos DB successfully using DefaultAzureCredential.
+[DEBUG] MCP Server: Connected to Cosmos DB: banking
+[DEBUG] MCP Server: Cosmos DB containers initialized
+[DEBUG] MCP Server: Retrieved Azure AD token successfully using DefaultAzureCredential.
+[DEBUG] MCP Server: Azure OpenAI client initialized successfully.
+INFO:     127.0.0.1:51692 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36590 - "POST /auth/login HTTP/1.1" 422 Unprocessable Entity
+🔍 AUDIT: {'timestamp': '2025-09-18T16:46:40.124015', 'event_type': 'authentication', 'user_id': 'admin', 'tenant_id': 'Contoso', 'success': True, 'ip_address': '127.0.0.1'}
+INFO:     127.0.0.1:51760 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50868 - "POST /auth/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50868 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50868 - "GET /tools HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41488 - "POST /auth/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41488 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41488 - "GET /tools HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [223611]

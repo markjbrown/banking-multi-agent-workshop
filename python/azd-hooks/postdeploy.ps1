@@ -2,13 +2,48 @@ Param(
     [parameter(Mandatory=$false)][string]$webAppName=$env:WEB_APP_NAME,
     [parameter(Mandatory=$false)][string]$resourceGroup=$env:RG_NAME,
 	[parameter(Mandatory=$false)][string]$webAppUrl=$env:FRONTENDPOINT_URL,
-    [parameter(Mandatory=$false)][string]$apiUrl=$env:SERVICE_ChatAPI_ENDPOINT_URL
+    [parameter(Mandatory=$false)][string]$apiUrl=$env:SERVICE_ChatAPI_ENDPOINT_URL,
+    [parameter(Mandatory=$false)][string]$mcpServerUrl=$env:SERVICE_MCPSERVER_ENDPOINT_URL
 )
 
 # Check if API URL is provided
 if (-not $apiUrl) {
     Write-Host "Error: API URL is required."
     exit 1
+}
+
+# Function to update .env file with MCP server endpoint
+function Update-EnvFile {
+    param (
+        [string]$mcpServerUrl
+    )
+    
+    if (-not $mcpServerUrl) {
+        Write-Host "Warning: MCP Server URL not provided, skipping .env update."
+        return
+    }
+    
+    $envFilePath = ".\.env"
+    $mcpEndpointLine = "MCP_SERVER_ENDPOINT=`"$mcpServerUrl`""
+    $mcpUseHttpLine = "MCP_USE_HTTP=`"true`""
+    
+    # Read current .env file content
+    $envContent = @()
+    if (Test-Path $envFilePath) {
+        $envContent = Get-Content $envFilePath
+    }
+    
+    # Remove existing MCP_SERVER_ENDPOINT and MCP_USE_HTTP lines
+    $envContent = $envContent | Where-Object { $_ -notmatch "^MCP_SERVER_ENDPOINT=" -and $_ -notmatch "^MCP_USE_HTTP=" }
+    
+    # Add the new MCP server configuration
+    $envContent += $mcpEndpointLine
+    $envContent += $mcpUseHttpLine
+    
+    # Write back to .env file
+    $envContent | Out-File -FilePath $envFilePath -Encoding utf8 -Force
+    
+    Write-Host "Updated .env file with MCP server endpoint: $mcpServerUrl"
 }
 
 # Function to upload frontend app
@@ -89,6 +124,14 @@ if ($dummyDataResponse -match "^(yes|y)$") {
 	Send-Data "./data/AccountsData.json" "accountdata"
 	Send-Data "./data/OffersData.json" "offerdata"
 }
+# Update .env file with MCP server endpoint
+Write-Host ""
+Write-Host "Updating .env file with MCP server configuration..."
+Update-EnvFile -mcpServerUrl $mcpServerUrl
+
+# Update .env file with MCP server endpoint
+Update-EnvFile -mcpServerUrl $mcpServerUrl
+
 Write-Host ""
 # Ask user if they want to deploy frontend
 $dummyDataResponse = Read-Host "Do you want to deploy the frontend app? (yes/no)"
@@ -100,4 +143,10 @@ if ($dummyDataResponse -match "^(yes|y)$") {
 	
 	Write-Host ""
 	Write-Host "Deployment complete. You can visit your app at : $webAppUrl"
+}
+
+Write-Host ""
+Write-Host "Post-deployment configuration complete."
+if ($mcpServerUrl) {
+    Write-Host "MCP Server is available at: $mcpServerUrl"
 }

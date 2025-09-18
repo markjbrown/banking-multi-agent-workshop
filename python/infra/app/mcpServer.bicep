@@ -1,0 +1,109 @@
+param name string
+param location string = resourceGroup().location
+param tags object = {}
+
+param containerAppsEnvironmentName string
+param containerRegistryName string
+param exists bool = false
+param envSettings array = []
+
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' existing = {
+  name: containerAppsEnvironmentName
+}
+
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
+  name: containerRegistryName
+}
+
+resource app 'Microsoft.App/containerApps@2023-05-01' = {
+  name: name
+  location: location
+  tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnvironment.id
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 8080
+        allowInsecure: false
+        traffic: [
+          {
+            latestRevision: true
+            weight: 100
+          }
+        ]
+      }
+      registries: [
+        {
+          server: containerRegistry.properties.loginServer
+          identity: 'system'
+        }
+      ]
+      secrets: [
+        {
+          name: 'jwt-secret'
+          value: 'banking-mcp-server-jwt-secret-${uniqueString(resourceGroup().id, name)}'
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'mcp-server'
+          image: exists ? '${containerRegistry.properties.loginServer}/mcpserver:latest' : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          resources: {
+            cpu: json('0.5')
+            memory: '1.0Gi'
+          }
+          env: concat([
+            {
+              name: 'PORT'
+              value: '8080'
+            }
+            {
+              name: 'MCP_USE_HTTP'
+              value: 'true'
+            }
+            {
+              name: 'JWT_SECRET'
+              secretRef: 'jwt-secret'
+            }
+          ], envSettings)
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 10
+        rules: [
+          {
+            name: 'http-rule'
+            http: {
+              metadata: {
+                concurrentRequests: '50'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
+// Grant the container app access to the container registry
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: containerRegistry
+  name: guid(containerRegistry.id, app.id, 'acrpull')
+  properties: {
+    principalId: app.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull role
+    principalType: 'ServicePrincipal'
+  }
+}
+
+output name string = app.name
+output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
+output id string = app.id
+output identityPrincipalId string = app.identity.principalId

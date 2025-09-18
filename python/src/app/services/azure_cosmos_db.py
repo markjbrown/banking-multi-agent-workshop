@@ -116,6 +116,7 @@ def vector_search(vectors, accountType):
 # update the user data container
 def update_chat_container(data):
     try:
+        # For hierarchical partition keys in SDK 4.6.0+, upsert_item handles it automatically
         chat_container.upsert_item(data)
         logging.debug(f"User data saved to Cosmos DB: {data}")
     except Exception as e:
@@ -134,6 +135,7 @@ def update_offers_container(data):
 
 def update_account_container(data):
     try:
+        # For hierarchical partition keys in SDK 4.6.0+, upsert_item handles it automatically
         account_container.upsert_item(data)
         print(f"[DEBUG] Account data saved to Cosmos DB: {data}")
     except Exception as e:

@@ -19,7 +19,9 @@ This is a sample that exposes turn-by-turn conversation with a multi-agent banki
    - Always route to coordinator agent first, which hands over the conversation to the appropriate sub-agent.
    - Each sub-agent either:
      - Routes to another agent.
-     - Calls a tool (functionality). Tools are implemented in a single unified [MCP](https://en.wikipedia.org/wiki/Model_Context_Protocol) server that can be used by all agents - see  `/app/tools/mcp_server.py`. The server is started using `MultiServerMCPClient` (part of `langchain-mcp-adapters` package) in `banking_agents.py`. The MCP server could also be started and consumed separately by a different application, but in this sample it is started as part of the application.
+     - Calls a tool (functionality). Tools are implemented in a unified [MCP](https://en.wikipedia.org/wiki/Model_Context_Protocol) server that supports two deployment modes:
+       - **Direct Mode**: MCP server runs embedded within the application (see `/app/tools/mcp_server.py`)
+       - **HTTP Mode**: MCP server runs as a separate HTTP microservice with enterprise security (see `/mcpserver/` folder with JWT authentication, RBAC, rate limiting, audit logging, and input validation)
        
 1. `banking_agents_api_cli.py`: This is a simple CLI tool that consumes the FastAPI server endpoint. It will:
    - Creates a sessionId using `POST /tenant/{tenantId}/user/{userId}/sessions` endpoint
@@ -175,7 +177,59 @@ But you will still need to install dependencies to run the solution locally.
    pip install -r ../src/app/requirements.txt
    ```
 
+4. Install HTTP MCP Server dependencies (if using HTTP mode):
+
+   ```shell
+   pip install -r ../mcpserver/requirements.txt
+   ```
+
+### Environment Configuration
+
+The application supports two MCP modes controlled by environment variables:
+
+#### Direct MCP Mode (Default)
+No additional configuration needed. The MCP server runs embedded within the application.
+
+#### HTTP MCP Mode
+Set these environment variables before starting the main application:
+
+```shell
+export MCP_USE_HTTP=true
+export MCP_SERVER_ENDPOINT=http://localhost:8080
+```
+
+**Optional MCP Server Configuration:**
+```shell
+# Custom JWT secret key (recommended for production)
+export MCP_AUTH_SECRET_KEY=your-secure-secret-key-here
+
+# Custom server port (default is 8080)
+export MCP_SERVER_PORT=8080
+
+# Security settings (for production)
+export JWT_EXPIRATION_HOURS=1
+export ALLOWED_ORIGINS=http://localhost:4200,http://localhost:3000
+export RATE_LIMIT_REQUESTS=100
+export ENABLE_AUDIT_LOGGING=true
+```
+
+**Security Features (HTTP MCP Mode):**
+The HTTP MCP server includes enterprise-grade security features:
+- 🔐 JWT authentication with access/refresh tokens
+- 👥 Role-based access control (admin, customer, agent, read-only)
+- 🛡️ Input validation and sanitization
+- 🚦 Rate limiting and DOS protection
+- 📝 Comprehensive audit logging
+- 🔒 CORS security and HTTPS support
+
+For production deployment, see `/mcpserver/SECURITY.md` for detailed security configuration.
+
 ### Running the solution
+
+You can run this solution in two modes:
+
+#### Option 1: Direct MCP Mode (Original)
+This runs the MCP server directly within the application.
 
 1. Navigate to the python folder of the project.
 2. Start the fastapi server.
@@ -184,7 +238,76 @@ But you will still need to install dependencies to run the solution locally.
    uvicorn src.app.banking_agents_api:app --reload --host 0.0.0.0 --port 8000
    ```
 
+#### Option 2: HTTP MCP Mode (New Architecture)
+This runs the MCP server as a separate HTTP service that the main application connects to.
+
+**Terminal 1 - Start the HTTP MCP Server:**
+```shell
+# Navigate to mcpserver folder and activate virtual environment
+cd /path/to/banking-multi-agent-workshop/mcpserver
+source .venv/bin/activate
+
+# Install dependencies (first time only)
+pip install -r requirements.txt
+
+# Start the HTTP MCP server with security features
+cd src
+python3 -m uvicorn mcp_http_server:app --host 0.0.0.0 --port 8080
+```
+
+**For Production Security:**
+```shell
+# Generate a secure JWT secret key
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Set production environment variables
+export JWT_SECRET=your-generated-secret-key
+export ALLOWED_ORIGINS=https://yourdomain.com
+export ENABLE_AUDIT_LOGGING=true
+
+# Copy and configure environment template
+cp .env.example .env
+# Edit .env with your production values
+```
+
+**Terminal 2 - Start the Main Banking Application:**
+```shell
+# Navigate to python folder and activate virtual environment
+cd /path/to/banking-multi-agent-workshop/python
+source .venv/bin/activate
+
+# Set environment variables to use HTTP MCP server
+export MCP_USE_HTTP=true
+export MCP_SERVER_ENDPOINT=http://localhost:8080
+
+# Start the main banking API
+uvicorn src.app.banking_agents_api:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Verify the setup:**
+```shell
+# Test HTTP MCP server health
+curl http://localhost:8080/health
+
+# Test authentication (get development token)
+curl -X POST http://localhost:8080/auth/token
+
+# Test banking API
+curl http://localhost:8000/docs
+
+# Run security tests (HTTP MCP server)
+cd /path/to/banking-multi-agent-workshop/mcpserver
+python test_security.py
+```
+
 The API will be available at <http://localhost:8000/docs>. This has been pre-built with boilerplate code that will create chat sessions and store the chat history in Cosmos DB.
+
+**MCP Server Endpoints:**
+- HTTP MCP Server: <http://localhost:8080>
+- API Documentation: <http://localhost:8080/docs>
+- Health Check: <http://localhost:8080/health>
+- Authentication: <http://localhost:8080/auth/token> (development)
+- Security Documentation: `/mcpserver/SECURITY.md`
 
 #### Run the Frontend App locally
 
@@ -231,6 +354,85 @@ The API will be available at <http://localhost:8000/docs>. This has been pre-bui
 - In the frontend terminal, press **Ctrl + C** to stop the application.
 - In your IDE press **Shift + F5** or stop the debugger.
 - If you are in CodeSpaces, go to each terminal and press **Ctrl + C**.
+- **For HTTP MCP Mode:** Stop both terminals (MCP server and main application).
+
+### Troubleshooting
+
+#### HTTP MCP Mode Issues
+
+**MCP Server won't start:**
+```shell
+# Navigate to mcpserver directory first
+cd /path/to/banking-multi-agent-workshop/mcpserver
+
+# Check if virtual environment is activated
+source .venv/bin/activate
+
+# Verify dependencies are installed
+pip install -r requirements.txt
+
+# Check for port conflicts
+lsof -i :8080
+
+# Check for Python/import errors
+cd src && python -c "import mcp_http_server; print('Server imports successfully')"
+```
+
+**Main application can't connect to MCP server:**
+```shell
+# Verify MCP server is running
+curl http://localhost:8080/health
+
+# Check environment variables are set
+echo $MCP_USE_HTTP
+echo $MCP_SERVER_ENDPOINT
+
+# Test authentication endpoint
+curl -X POST http://localhost:8080/auth/token
+
+# Check application logs for connection errors
+```
+
+**Security and Authentication errors:**
+```shell
+# Verify JWT secret key is properly configured
+echo $JWT_SECRET
+
+# Check if authentication is working
+curl -X POST http://localhost:8080/auth/token
+
+# Run security validation tests
+cd /path/to/banking-multi-agent-workshop/mcpserver
+python test_security.py
+
+# Check server audit logs for security events
+```
+
+**Rate limiting errors (429 status):**
+```shell
+# Check current rate limit settings
+echo $RATE_LIMIT_REQUESTS
+echo $RATE_LIMIT_WINDOW_SECONDS
+
+# Wait for rate limit window to reset or adjust limits
+export RATE_LIMIT_REQUESTS=200
+```
+
+#### Common Issues
+
+**Module not found errors:**
+```shell
+# Ensure virtual environment is activated
+source .venv/bin/activate
+
+# Reinstall dependencies
+pip install -r requirements.txt
+```
+
+**Azure connection errors:**
+- Verify your `.env` file contains valid Azure endpoints
+- Check Azure service authentication and permissions
+- Ensure Azure resources are deployed and accessible
 
 ## Clean up
 

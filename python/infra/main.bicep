@@ -143,6 +143,8 @@ module AssignRoles './shared/assignroles.bicep' = {
   dependsOn: [cosmos, monitoring, openAi]
 }
 
+
+
 // Deploy ChatAPI Container App
 module ChatAPI './app/ChatAPI.bicep' = {
   name: 'ChatAPI'
@@ -222,6 +224,55 @@ module ChatAPI './app/ChatAPI.bicep' = {
   dependsOn: [cosmos, monitoring, openAi]
 }
 
+// Deploy MCP Server Container App
+module mcpServer './app/mcpServer.bicep' = {
+  name: 'mcpServer'
+  params: {
+    name: '${abbrs.appContainerApps}mcpserver-${resourceToken}'
+    location: location
+    tags: tags
+    containerAppsEnvironmentName: appsEnv.outputs.name
+    containerRegistryName: registry.outputs.name
+    exists: false // Set to true after first deployment
+    envSettings: [
+      {
+        name: 'AZURE_OPENAI_ENDPOINT'
+        value: openAi.outputs.endpoint
+      }
+      {
+        name: 'AZURE_OPENAI_COMPLETIONSDEPLOYMENTID'
+        value: openAiModelDeployments[0].outputs.name
+      }
+      {
+        name: 'AZURE_OPENAI_EMBEDDINGDEPLOYMENTID'
+        value: openAiModelDeployments[1].outputs.name
+      }
+      {
+        name: 'COSMOSDB_ENDPOINT'
+        value: cosmos.outputs.endpoint
+      }
+      {
+        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+        value: monitoring.outputs.applicationInsightsConnectionString
+      }
+    ]
+  }
+  scope: rg
+  dependsOn: [cosmos, monitoring, openAi, appsEnv, registry]
+}
+
+// Assign roles to MCP Server system-assigned identity
+module mcpServerRoles './shared/mcproles.bicep' = {
+  name: 'mcpServerRoles'
+  params: {
+    mcpServerName: mcpServer.outputs.name
+    cosmosDbAccountName: cosmos.outputs.name
+    openAIName: openAi.outputs.name
+  }
+  scope: rg
+  dependsOn: [mcpServer]
+}
+
 module webApp './app/webApp.bicep' = {
   name: 'webApp'  
   params: {
@@ -236,6 +287,7 @@ module webApp './app/webApp.bicep' = {
 // Outputs
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
 output SERVICE_ChatAPI_ENDPOINT_URL string = ChatAPI.outputs.uri
+output SERVICE_MCPSERVER_ENDPOINT_URL string = mcpServer.outputs.uri
 output FRONTENDPOINT_URL string = webApp.outputs.url
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output WEB_APP_NAME string = '${abbrs.webSitesAppService}${resourceToken}'
