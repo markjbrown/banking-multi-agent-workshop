@@ -116,23 +116,7 @@ async def get_persistent_mcp_client():
                 
         except Exception as e:
             print(f"❌ Failed to initialize SHARED MCP client: {e}")
-            print("🔄 Falling back to lightweight MCP server...")
-            
-            # Fallback to lightweight MCP server
-            try:
-                _persistent_mcp_client = MultiServerMCPClient({
-                    "banking_tools": {
-                        "command": "python3",
-                        "args": ["-m", "src.app.tools.lightweight_mcp_server"], 
-                        "transport": "stdio",
-                    },
-                })
-                
-                _mcp_tools_cache = await _persistent_mcp_client.get_tools()
-                print(f"✅ Lightweight MCP fallback activated")
-            except Exception as fallback_error:
-                print(f"❌ Lightweight MCP fallback also failed: {fallback_error}")
-                raise Exception("Both shared and lightweight MCP initialization failed")
+            raise Exception("Failed to initialize MCP client")
     
     return _persistent_mcp_client, _mcp_tools_cache
 
@@ -359,26 +343,10 @@ async def call_transactions_agent(state: MessagesState, config) -> Command[Liter
     
     # Add system message with tenant/user context for the LLM to use when calling tools
     from langchain_core.messages import SystemMessage
-    
-    system_msg_content = f"""CRITICAL TOOL USAGE INSTRUCTIONS:
 
-1. bank_balance tool requires: account_number, tenantId, userId
-   Example: bank_balance(account_number="Acc001", tenantId="{tenantId}", userId="{userId}")
+    system_msg_content = f"IMPORTANT: When calling the bank_balance, bank_transfer, or get_transaction_history tools, you MUST always include these exact parameters: tenantId='{tenantId}', userId='{userId}', thread_id='{thread_id}'. Do not call these tools without all required parameters."
+    print(f"🔧 DEBUG: Adding system message to transactions agent: {system_msg_content}")
 
-2. bank_transfer tool requires ALL parameters:
-   - fromAccount: source account number (e.g., "Acc001")
-   - toAccount: destination account number (e.g., "Acc002") 
-   - amount: transfer amount as number (e.g., 100.0)
-   - tenantId: "{tenantId}"
-   - userId: "{userId}"
-   - thread_id: "{thread_id}"
-   Example: bank_transfer(fromAccount="Acc001", toAccount="Acc002", amount=100.0, tenantId="{tenantId}", userId="{userId}", thread_id="{thread_id}")
-
-3. get_transaction_history tool requires: account_number, start_date, end_date, tenantId, userId
-   Example: get_transaction_history(account_number="Acc001", start_date="2024-01-01", end_date="2024-12-31", tenantId="{tenantId}", userId="{userId}")
-
-NEVER call tools without providing all required parameters. Always collect missing information from the user first."""
-    print(f"🔧 DEBUG: Adding enhanced system message to transactions agent")
     
     # Add as proper SystemMessage object 
     system_message = SystemMessage(content=system_msg_content)
