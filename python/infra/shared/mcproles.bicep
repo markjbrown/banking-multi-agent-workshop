@@ -20,7 +20,7 @@ resource cosmosDbRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   scope: cosmosDb
   properties: {
     principalId: mcpServer.identity.principalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00000000-0000-0000-0000-000000000002') // Cosmos DB Data Contributor
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Cosmos DB Data Contributor
     principalType: 'ServicePrincipal'
   }
 }

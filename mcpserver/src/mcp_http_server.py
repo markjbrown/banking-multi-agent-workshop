@@ -24,15 +24,15 @@ import uvicorn
 from dotenv import load_dotenv
 
 # Import enhanced security modules
-from security import (
+from src.security import (
     SecurityConfig, UserRole, SecureToolCallRequest, LoginRequest, 
     RefreshTokenRequest, sanitize_dict, validate_account_number,
     validate_amount, RateLimiter, AuditLogger, check_tool_permission
 )
-from auth import token_manager, TokenData
+from src.auth import token_manager, TokenData
 
 # Import our Azure service dependencies
-from services.azure_cosmos_db import (
+from src.services.azure_cosmos_db import (
     vector_search,
     create_account_record,
     fetch_latest_account_number,
@@ -43,7 +43,7 @@ from services.azure_cosmos_db import (
     fetch_transactions_by_date_range,
     create_service_request_record,
 )
-from services.azure_open_ai import generate_embedding
+from src.services.azure_open_ai import generate_embedding
 
 load_dotenv(override=False)
 
@@ -197,7 +197,7 @@ async def call_bank_transfer(arguments: dict) -> str:
         source_account_id = source_account.get('accountId', source_account.get('id'))
         new_source_balance = current_balance - amount
         print(f"🔧 DEBUG: Updating source account balance using accountId={source_account_id} (not {from_account})...")
-        patch_account_record(tenant_id, source_account_id, new_source_balance)
+        patch_account_record(tenant_id, source_account_id, new_source_balance, user_id)
         print(f"🔧 DEBUG: Source account balance updated successfully")
         
         # Get and update destination account (if exists)
@@ -210,7 +210,7 @@ async def call_bank_transfer(arguments: dict) -> str:
             # USE ACCOUNT ID FROM DATABASE, NOT THE PARAMETER!
             dest_account_id = dest_account.get('accountId', dest_account.get('id'))
             print(f"🔧 DEBUG: Updating destination account balance using accountId={dest_account_id} (not {to_account})...")
-            patch_account_record(tenant_id, dest_account_id, new_dest_balance)
+            patch_account_record(tenant_id, dest_account_id, new_dest_balance, user_id)
             print(f"🔧 DEBUG: Destination account balance updated successfully")
         
         # Create transaction record
@@ -609,9 +609,24 @@ async def call_tool(
         # Sanitize and validate arguments
         sanitized_arguments = sanitize_dict(request.arguments)
         
-        # Add secure context information - use request values if provided, otherwise fall back to token data
-        sanitized_arguments["tenantId"] = request.tenant_id or token_data.tenant_id
-        sanitized_arguments["userId"] = request.user_id or token_data.user_id
+        # Debug: Log the context mismatch
+        print(f"🔧 DEBUG CONTEXT: Token user='{token_data.user_id}', tenant='{token_data.tenant_id}'")
+        print(f"🔧 DEBUG CONTEXT: Request user='{request.user_id}', tenant='{request.tenant_id}'")
+        
+        # Add secure context information - ALWAYS use token data for security
+        # For dev/testing: allow request values if token is dev-user, otherwise enforce token context
+        if token_data.user_id == "dev-user" and token_data.tenant_id == "dev-tenant":
+            # Development mode: allow request to specify actual user context
+            sanitized_arguments["tenantId"] = request.tenant_id or token_data.tenant_id
+            sanitized_arguments["userId"] = request.user_id or token_data.user_id
+            print(f"🔧 DEBUG CONTEXT: Using REQUEST context - user='{sanitized_arguments['userId']}', tenant='{sanitized_arguments['tenantId']}'")
+        else:
+            # Production mode: always use authenticated token context for security
+            sanitized_arguments["tenantId"] = token_data.tenant_id
+            sanitized_arguments["userId"] = token_data.user_id
+            print(f"🔧 DEBUG CONTEXT: Using TOKEN context - user='{sanitized_arguments['userId']}', tenant='{sanitized_arguments['tenantId']}'")
+        
+        
         if request.thread_id:
             sanitized_arguments["thread_id"] = request.thread_id
         

@@ -1,13 +1,12 @@
 param name string
 param location string = resourceGroup().location
 param tags object = {}
-
 param containerAppsEnvironmentName string
 param containerRegistryName string
 param exists bool = false
 param envSettings array = []
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' existing = {
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' existing = {
   name: containerAppsEnvironmentName
 }
 
@@ -15,10 +14,10 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01-pr
   name: containerRegistryName
 }
 
-resource app 'Microsoft.App/containerApps@2023-05-01' = {
+resource app 'Microsoft.App/containerApps@2024-02-02-preview' = {
   name: name
   location: location
-  tags: tags
+  tags: union(tags, {'azd-service-name': 'MCPServer'})
   identity: {
     type: 'SystemAssigned'
   }
@@ -27,79 +26,38 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
     configuration: {
       ingress: {
         external: true
-        targetPort: 8080
-        allowInsecure: false
-        traffic: [
-          {
-            latestRevision: true
-            weight: 100
-          }
-        ]
+        targetPort: 80
+        transport: 'auto'
+        corsPolicy: {
+          allowedOrigins: ['*']
+          allowedMethods: ['DELETE', 'GET', 'POST', 'PUT']
+          allowedHeaders: ['*']
+        }
       }
-      registries: [
-        {
-          server: containerRegistry.properties.loginServer
-          identity: 'system'
-        }
-      ]
-      secrets: [
-        {
-          name: 'jwt-secret'
-          value: 'banking-mcp-server-jwt-secret-${uniqueString(resourceGroup().id, name)}'
-        }
-      ]
+      activeRevisionsMode: 'Single'
     }
     template: {
       containers: [
         {
           name: 'mcp-server'
-          image: exists ? '${containerRegistry.properties.loginServer}/mcpserver:latest' : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
           resources: {
             cpu: json('0.5')
             memory: '1.0Gi'
           }
-          env: concat([
+          env: union([
             {
               name: 'PORT'
-              value: '8080'
-            }
-            {
-              name: 'MCP_USE_HTTP'
-              value: 'true'
-            }
-            {
-              name: 'JWT_SECRET'
-              secretRef: 'jwt-secret'
+              value: '80'
             }
           ], envSettings)
         }
       ]
       scale: {
-        minReplicas: 1
-        maxReplicas: 10
-        rules: [
-          {
-            name: 'http-rule'
-            http: {
-              metadata: {
-                concurrentRequests: '50'
-              }
-            }
-          }
-        ]
+        minReplicas: 0
+        maxReplicas: 2
       }
     }
-  }
-}
-
-// Grant the container app access to the container registry
-resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: containerRegistry
-  name: guid(containerRegistry.id, app.id, 'acrpull')
-  properties: {
-    principalId: app.identity.principalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull role
-    principalType: 'ServicePrincipal'
   }
 }
 

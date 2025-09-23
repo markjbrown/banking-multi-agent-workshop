@@ -250,9 +250,8 @@ source .venv/bin/activate
 # Install dependencies (first time only)
 pip install -r requirements.txt
 
-# Start the HTTP MCP server with security features
-cd src
-python3 -m uvicorn mcp_http_server:app --host 0.0.0.0 --port 8080
+# Start the HTTP MCP server with security features (run from mcpserver root)
+python3 -m uvicorn src.mcp_http_server:app --host 0.0.0.0 --port 8080
 ```
 
 **For Production Security:**
@@ -375,7 +374,7 @@ pip install -r requirements.txt
 lsof -i :8080
 
 # Check for Python/import errors
-cd src && python -c "import mcp_http_server; print('Server imports successfully')"
+python -c "import src.mcp_http_server; print('Server imports successfully')"
 ```
 
 **Main application can't connect to MCP server:**

@@ -71,8 +71,8 @@ export AZURE_OPENAI_ENDPOINT="your-openai-endpoint"
 export AZURE_OPENAI_EMBEDDINGDEPLOYMENTID="text-embedding-3-small"
 export JWT_SECRET="your-jwt-secret"
 
-# Run the server
-python -m src.mcp_http_server
+# Run the server (from mcpserver root directory)
+python -m uvicorn src.mcp_http_server:app --host 0.0.0.0 --port 8080
 ```
 
 ### 2. Azure Deployment

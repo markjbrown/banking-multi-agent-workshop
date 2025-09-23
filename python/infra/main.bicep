@@ -14,6 +14,7 @@ param principalId string
 
 var tags = {
   'azd-env-name': environmentName
+  'owner': 'theocon@microsoft.com'
 }
 
 var abbrs = loadJsonContent('./abbreviations.json')
@@ -92,7 +93,7 @@ var deployments = [
   {
     name: 'text-embedding-3-small'
     skuCapacity: 5
-	skuName: 'Standard'
+	skuName: 'GlobalStandard'
     modelName: 'text-embedding-3-small'
     modelVersion: '1'
   }
