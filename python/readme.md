@@ -251,7 +251,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Start the HTTP MCP server with security features (run from mcpserver root)
-python3 -m uvicorn src.mcp_http_server:app --host 0.0.0.0 --port 8080
+PYTHONPATH=src python3 -m uvicorn src.mcp_http_server:app --host 0.0.0.0 --port 8080
 ```
 
 **For Production Security:**
@@ -373,8 +373,11 @@ pip install -r requirements.txt
 # Check for port conflicts
 lsof -i :8080
 
-# Check for Python/import errors
-python -c "import src.mcp_http_server; print('Server imports successfully')"
+# Check for Python/import errors with correct PYTHONPATH
+PYTHONPATH=src python -c "import src.mcp_http_server; print('Server imports successfully')"
+
+# Start with proper PYTHONPATH
+PYTHONPATH=src python3 -m uvicorn src.mcp_http_server:app --host 0.0.0.0 --port 8080
 ```
 
 **Main application can't connect to MCP server:**
