@@ -213,24 +213,46 @@ async def call_bank_transfer(arguments: dict) -> str:
             patch_account_record(tenant_id, dest_account_id, new_dest_balance, user_id)
             print(f"🔧 DEBUG: Destination account balance updated successfully")
         
-        # Create transaction record
-        print(f"🔧 DEBUG: Creating transaction record...")
-        transaction_number = fetch_latest_transaction_number(from_account) + 1
-        transaction_data = {
-            "id": f"T{transaction_number:06d}",
+        # Create debit transaction record for source account
+        print(f"🔧 DEBUG: Creating debit transaction record for source account...")
+        debit_transaction_number = fetch_latest_transaction_number(from_account) + 1
+        debit_transaction_data = {
+            "id": f"{from_account}-{debit_transaction_number}",
             "type": "BankTransaction",
-            "accountId": from_account,
-            "amount": -amount,
-            "balance": new_source_balance,
-            "description": f"Transfer to {to_account}",
+            "accountId": source_account_id,
+            "debitAmount": amount,
+            "creditAmount": 0,
+            "accountBalance": new_source_balance,
+            "details": f"Transfer to {to_account}",
             "transactionDateTime": datetime.utcnow().isoformat() + "Z",
             "tenantId": tenant_id,
             "userId": user_id,
             "threadId": thread_id
         }
-        print(f"🔧 DEBUG: Transaction data: {transaction_data}")
-        create_transaction_record(transaction_data)
-        print(f"🔧 DEBUG: Transaction record created successfully")
+        print(f"🔧 DEBUG: Debit transaction data: {debit_transaction_data}")
+        create_transaction_record(debit_transaction_data)
+        print(f"🔧 DEBUG: Debit transaction record created successfully")
+        
+        # Create credit transaction record for destination account (if exists)
+        if dest_account:
+            print(f"🔧 DEBUG: Creating credit transaction record for destination account...")
+            credit_transaction_number = fetch_latest_transaction_number(to_account) + 1
+            credit_transaction_data = {
+                "id": f"{to_account}-{credit_transaction_number}",
+                "type": "BankTransaction", 
+                "accountId": dest_account_id,
+                "debitAmount": 0,
+                "creditAmount": amount,
+                "accountBalance": new_dest_balance,
+                "details": f"Transfer from {from_account}",
+                "transactionDateTime": datetime.utcnow().isoformat() + "Z",
+                "tenantId": tenant_id,
+                "userId": user_id,
+                "threadId": thread_id
+            }
+            print(f"🔧 DEBUG: Credit transaction data: {credit_transaction_data}")
+            create_transaction_record(credit_transaction_data)
+            print(f"🔧 DEBUG: Credit transaction record created successfully")
         
         return f"Successfully transferred ${amount:.2f} from {from_account} to {to_account}. New balance: ${new_source_balance:.2f}"
     
@@ -261,10 +283,32 @@ async def call_get_transaction_history(arguments: dict) -> str:
         
         history = []
         for transaction in transactions:
-            history.append(f"Date: {transaction.get('transactionDateTime', 'N/A')}, "
-                         f"Amount: ${transaction.get('amount', 0):.2f}, "
-                         f"Description: {transaction.get('description', 'N/A')}, "
-                         f"Balance: ${transaction.get('balance', 0):.2f}")
+            # Extract transaction details with correct field names
+            date = transaction.get('transactionDateTime', 'N/A')
+            if date != 'N/A':
+                try:
+                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    date = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+                except:
+                    pass
+            
+            # Determine transaction type and amount using debitAmount/creditAmount
+            debit = transaction.get('debitAmount', 0)
+            credit = transaction.get('creditAmount', 0)
+            if debit > 0:
+                amount_str = f"-${debit:,.2f}"
+                txn_type = "Debit"
+            elif credit > 0:
+                amount_str = f"+${credit:,.2f}"
+                txn_type = "Credit"
+            else:
+                amount_str = "$0.00"
+                txn_type = "Unknown"
+            
+            details = transaction.get('details', 'No details')
+            balance = transaction.get('accountBalance', 0)
+            
+            history.append(f"{date}: {txn_type} {amount_str} - {details} (Balance: ${balance:,.2f})")
         
         return f"Transaction history for account {account_number}:\n" + "\n".join(history)
     
@@ -337,11 +381,16 @@ async def call_service_request(arguments: dict) -> str:
     request_summary = arguments.get("requestSummary", "")
     tenant_id = arguments.get("tenantId", "")
     user_id = arguments.get("userId", "")
+    account_id = arguments.get("accountId", "")  # Add accountId parameter
     
     print(f"🏦 MCP HTTP: Creating service request")
     
     if not all([recipient_phone, recipient_email, request_summary, tenant_id, user_id]):
         return "Error: Missing required parameters"
+    
+    # If no specific accountId provided, generate a generic one for partition key
+    if not account_id:
+        account_id = "SERVICE_REQUEST"  # Generic account ID for service requests
     
     try:
         request_id = str(uuid.uuid4())
@@ -353,6 +402,7 @@ async def call_service_request(arguments: dict) -> str:
             "requestSummary": request_summary,
             "tenantId": tenant_id,
             "userId": user_id,
+            "accountId": account_id,  # Include accountId for partition key
             "createdDateTime": datetime.utcnow().isoformat() + "Z",
             "status": "pending"
         }
@@ -372,20 +422,67 @@ async def call_get_branch_location(arguments: dict) -> str:
     if not state:
         return "Error: Missing state parameter"
     
-    # Mock branch location data (in production, this would come from a database)
-    branch_locations = {
-        "california": ["Los Angeles - 123 Main St", "San Francisco - 456 Market St", "San Diego - 789 Beach Ave"],
-        "texas": ["Dallas - 321 Elm St", "Houston - 654 Oak Ave", "Austin - 987 Congress St"],
-        "new york": ["New York City - 555 Broadway", "Albany - 222 State St", "Buffalo - 111 Main St"]
-    }
-    
-    state_lower = state.lower()
-    locations = branch_locations.get(state_lower, [])
-    
-    if not locations:
-        return f"No branch locations found for {state}"
-    
-    return f"Branch locations in {state}:\n" + "\n".join(locations)
+    try:
+        state = state.strip()
+        
+        if not state:
+            return "State name is required."
+        
+        # Complete branch location data (matching Python version)
+        branches = {
+            "Alabama": {"Jefferson County": ["Central Bank - Birmingham", "Trust Bank - Hoover"],
+                        "Mobile County": ["Central Bank - Mobile", "Trust Bank - Prichard"]},
+            "Alaska": {"Anchorage": ["Central Bank - Anchorage", "Trust Bank - Eagle River"],
+                    "Fairbanks North Star Borough": ["Central Bank - Fairbanks", "Trust Bank - North Pole"]},
+            "Arizona": {"Maricopa County": ["Central Bank - Phoenix", "Trust Bank - Scottsdale"],
+                        "Pima County": ["Central Bank - Tucson", "Trust Bank - Oro Valley"]},
+            "Arkansas": {"Pulaski County": ["Central Bank - Little Rock", "Trust Bank - North Little Rock"],
+                        "Benton County": ["Central Bank - Bentonville", "Trust Bank - Rogers"]},
+            "California": {"Los Angeles County": ["Central Bank - Los Angeles", "Trust Bank - Long Beach"],
+                        "San Diego County": ["Central Bank - San Diego", "Trust Bank - Chula Vista"]},
+            "Colorado": {"Denver County": ["Central Bank - Denver", "Trust Bank - Aurora"],
+                        "El Paso County": ["Central Bank - Colorado Springs", "Trust Bank - Fountain"]},
+            "Connecticut": {"Fairfield County": ["Central Bank - Bridgeport", "Trust Bank - Stamford"],
+                            "Hartford County": ["Central Bank - Hartford", "Trust Bank - New Britain"]},
+            "Delaware": {"New Castle County": ["Central Bank - Wilmington", "Trust Bank - Newark"],
+                        "Sussex County": ["Central Bank - Seaford", "Trust Bank - Lewes"]},
+            "Florida": {"Miami-Dade County": ["Central Bank - Miami", "Trust Bank - Hialeah"],
+                        "Orange County": ["Central Bank - Orlando", "Trust Bank - Winter Park"]},
+            "Georgia": {"Fulton County": ["Central Bank - Atlanta", "Trust Bank - Sandy Springs"],
+                        "Cobb County": ["Central Bank - Marietta", "Trust Bank - Smyrna"]},
+            "Hawaii": {"Honolulu County": ["Central Bank - Honolulu", "Trust Bank - Pearl City"],
+                        "Hawaii County": ["Central Bank - Hilo", "Trust Bank - Kailua-Kona"]},
+            "Texas": {"Harris County": ["Central Bank - Houston", "Trust Bank - Pasadena"],
+                    "Dallas County": ["Central Bank - Dallas", "Trust Bank - Plano"]},
+            "New York": {"New York County": ["Central Bank - Manhattan", "Trust Bank - Brooklyn"],
+                        "Kings County": ["Central Bank - Brooklyn", "Trust Bank - Queens"]},
+            "Washington": {"King County": ["Central Bank - Seattle", "Trust Bank - Bellevue"],
+                        "Pierce County": ["Central Bank - Tacoma", "Trust Bank - Lakewood"]}
+        }
+        
+        # Case-insensitive state lookup
+        state_match = None
+        for state_key in branches.keys():
+            if state_key.lower() == state.lower():
+                state_match = state_key
+                break
+        
+        if not state_match:
+            available_states = ", ".join(sorted(branches.keys()))
+            return f"No branches found for '{state}'. Available states: {available_states}"
+        
+        # Format response
+        result = f"Branch locations in {state_match}:\n"
+        for county, branch_list in branches[state_match].items():
+            result += f"\n{county}:\n"
+            for branch in branch_list:
+                result += f"  - {branch}\n"
+        
+        print(f"✅ MCP HTTP: Found {len(branches[state_match])} counties with branches in {state_match}")
+        return result
+        
+    except Exception as e:
+        return f"Error getting branch locations: {str(e)}"
 
 async def call_calculate_monthly_payment(arguments: dict) -> str:
     """Calculate monthly loan payment"""
@@ -506,6 +603,7 @@ TOOL_DEFINITIONS = [
             "recipientPhone": {"type": "string", "description": "Phone number", "required": True},
             "recipientEmail": {"type": "string", "description": "Email address", "required": True},
             "requestSummary": {"type": "string", "description": "Request summary", "required": True},
+            "accountId": {"type": "string", "description": "Account ID (optional)", "required": False},
             "tenantId": {"type": "string", "description": "Tenant ID", "required": True},
             "userId": {"type": "string", "description": "User ID", "required": True}
         }
