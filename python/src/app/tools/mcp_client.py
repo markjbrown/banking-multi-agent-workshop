@@ -1,6 +1,6 @@
 """
-🚀 ENHANCED MCP CLIENT - HTTP and Direct Server Support
-This client manages connections to both HTTP MCP servers and direct server instances
+🚀 ENHANCED MCP CLIENT - Remote and Local Server Support
+This client manages connections to both Remote MCP servers (HTTP) and Local server instances
 """
 import asyncio
 import subprocess
@@ -40,8 +40,8 @@ def get_mcp_context():
         'thread_id': THREAD_CONTEXT.get()
     }
 
-class HTTPMCPClient:
-    """HTTP-based MCP client for connecting to remote MCP servers"""
+class RemoteMCPClient:
+    """Remote MCP client for connecting to HTTP-based MCP servers"""
     
     def __init__(self, base_url: str = None):
         self.base_url = base_url or os.getenv("MCP_SERVER_ENDPOINT", "http://localhost:8080")
@@ -52,7 +52,7 @@ class HTTPMCPClient:
     async def authenticate(self) -> bool:
         """Authenticate with the HTTP MCP server"""
         try:
-            print(f"🔐 HTTP MCP: Authenticating with server at {self.base_url}")
+            print(f"🔐 REMOTE MCP: Authenticating with server at {self.base_url}")
             
             # Get token from auth endpoint (in production, use proper OAuth2 flow)
             response = await self.http_client.post(f"{self.base_url}/auth/token")
@@ -62,10 +62,10 @@ class HTTPMCPClient:
             self.access_token = token_data.get("access_token")
             
             if not self.access_token:
-                print("❌ HTTP MCP: No access token received")
+                print("❌ REMOTE MCP: No access token received")
                 return False
                 
-            print("✅ HTTP MCP: Successfully authenticated")
+            print("✅ REMOTE MCP: Successfully authenticated")
             return True
             
         except Exception as e:
@@ -75,7 +75,7 @@ class HTTPMCPClient:
     async def connect_to_server(self) -> bool:
         """Connect to the HTTP MCP server"""
         try:
-            print(f"🔌 HTTP MCP: Connecting to server at {self.base_url}")
+            print(f"🔌 REMOTE MCP: Connecting to server at {self.base_url}")
             
             # Authenticate first
             if not await self.authenticate():
@@ -87,7 +87,7 @@ class HTTPMCPClient:
             response.raise_for_status()
             
             health_data = response.json()
-            print(f"✅ HTTP MCP: Connected to server (status: {health_data.get('status')})")
+            print(f"✅ REMOTE MCP: Connected to server (status: {health_data.get('status')})")
             
             # Get available tools
             response = await self.http_client.get(f"{self.base_url}/tools", headers=headers)
@@ -96,7 +96,7 @@ class HTTPMCPClient:
             tools_data = response.json()
             self.tools_cache = tools_data
             
-            print(f"🛠️  HTTP MCP: Retrieved {len(self.tools_cache)} tools")
+            print(f"🛠️  REMOTE MCP: Retrieved {len(self.tools_cache)} tools")
             for tool in self.tools_cache:
                 print(f"   - {tool.get('name', 'unknown')}")
             
@@ -113,7 +113,7 @@ class HTTPMCPClient:
                 raise Exception("Could not authenticate with HTTP MCP server")
         
         call_start = time.time()
-        print(f"📞 HTTP MCP: Calling tool '{tool_name}' via HTTP")
+        print(f"📞 REMOTE MCP: Calling tool '{tool_name}' via HTTP")
         print(f"🔧 DEBUG: Tool arguments: {arguments}")
         
         # Inject context information
@@ -127,8 +127,8 @@ class HTTPMCPClient:
             "thread_id": context.get('thread_id')
         }
         
-        print(f"🔧 DEBUG HTTP CLIENT: Making request to {self.base_url}/tools/call")
-        print(f"🔧 DEBUG HTTP CLIENT: Request data: {request_data}")
+        print(f"🔧 DEBUG REMOTE CLIENT: Making request to {self.base_url}/tools/call")
+        print(f"🔧 DEBUG REMOTE CLIENT: Request data: {request_data}")
         
         try:
             headers = {"Authorization": f"Bearer {self.access_token}"}
@@ -143,23 +143,23 @@ class HTTPMCPClient:
             call_time = (time.time() - call_start) * 1000
             
             if result_data.get("success"):
-                print(f"✅ HTTP MCP: Tool call completed in {call_time:.2f}ms")
+                print(f"✅ REMOTE MCP: Tool call completed in {call_time:.2f}ms")
                 return result_data.get("result")
             else:
                 error_msg = result_data.get("error", "Unknown error")
-                print(f"❌ HTTP MCP: Tool call failed in {call_time:.2f}ms: {error_msg}")
+                print(f"❌ REMOTE MCP: Tool call failed in {call_time:.2f}ms: {error_msg}")
                 raise Exception(error_msg)
                 
         except Exception as e:
             call_time = (time.time() - call_start) * 1000
-            print(f"❌ HTTP MCP: Tool call failed in {call_time:.2f}ms: {e}")
+            print(f"❌ REMOTE MCP: Tool call failed in {call_time:.2f}ms: {e}")
             raise
     
     async def get_tools(self) -> List[Dict[str, Any]]:
         """Get available tools from HTTP server"""
         if not self.tools_cache:
             if not await self.connect_to_server():
-                raise Exception("Could not connect to HTTP MCP server to get tools")
+                raise Exception("Could not connect to Remote MCP server to get tools")
         
         # Convert HTTP server tool format to expected MCP format
         mcp_tools = []
@@ -176,19 +176,19 @@ class HTTPMCPClient:
     
     async def cleanup(self):
         """Clean up HTTP client"""
-        print("🔄 HTTP MCP: Cleaning up HTTP client...")
+        print("🔄 REMOTE MCP: Cleaning up Remote MCP client...")
         if self.http_client:
             await self.http_client.aclose()
         self.access_token = None
         self.tools_cache = None
 
 class SharedMCPClient:
-    """Enhanced MCP client with HTTP and direct server support"""
+    """Enhanced MCP client with Remote and Local server support"""
     
     def __init__(self):
-        self.http_client: Optional[HTTPMCPClient] = None
-        self.direct_server = None
-        self.use_http = os.getenv("MCP_USE_HTTP", "false").lower() == "true"
+        self.remote_client: Optional[RemoteMCPClient] = None
+        self.local_server = None
+        self.use_remote = os.getenv("USE_REMOTE_MCP_SERVER", "false").lower() == "true"
         self.tools_cache: Optional[List] = None
         
         # Legacy stdio support
@@ -244,44 +244,44 @@ class SharedMCPClient:
     
     async def connect_to_server(self) -> bool:
         """Connect to either HTTP or direct server based on configuration"""
-        if self.use_http:
-            print("🌐 ENHANCED MCP: Using HTTP MCP server")
-            self.http_client = HTTPMCPClient()
-            return await self.http_client.connect_to_server()
+        if self.use_remote:
+            print("🌐 ENHANCED MCP: Using Remote MCP server (HTTP)")
+            self.remote_client = RemoteMCPClient()
+            return await self.remote_client.connect_to_server()
         else:
-            print("🔗 ENHANCED MCP: Using direct MCP server")
+            print("🔗 ENHANCED MCP: Using Local MCP server")
             try:
                 from src.app.tools.mcp_server import get_cached_server_instance
-                self.direct_server = await get_cached_server_instance()
+                self.local_server = await get_cached_server_instance()
                 
-                if not self.direct_server:
-                    print("❌ ENHANCED MCP: No direct server instance available")
+                if not self.local_server:
+                    print("❌ ENHANCED MCP: No Local server instance available")
                     return False
                 
-                tools_info = self.direct_server.get_available_tools()
+                tools_info = self.local_server.get_available_tools()
                 self.tools_cache = tools_info if isinstance(tools_info, list) else []
                 
-                print(f"🛠️  ENHANCED MCP: Connected to direct server with {len(self.tools_cache)} tools")
+                print(f"🛠️  ENHANCED MCP: Connected to Local server with {len(self.tools_cache)} tools")
                 return True
                 
             except Exception as e:
-                print(f"❌ ENHANCED MCP: Failed to connect to direct server: {e}")
+                print(f"❌ ENHANCED MCP: Failed to connect to Local server: {e}")
                 return False
     
     async def get_tools(self):
         """Get LangChain-compatible tools from the shared MCP server."""
         try:
-            if self.use_http and self.http_client:
-                print("🔧 ENHANCED MCP: Getting tools from HTTP server")
-                tools_list = await self.http_client.get_tools()
+            if self.use_remote and self.remote_client:
+                print("🔧 ENHANCED MCP: Getting tools from Remote server")
+                tools_list = await self.remote_client.get_tools()
             else:
-                print("🔧 ENHANCED MCP: Getting tools from direct server")
+                print("🔧 ENHANCED MCP: Getting tools from Local server")
                 from src.app.tools.mcp_server import get_cached_server_instance
                 server_instance = await get_cached_server_instance()
                 tools_list = server_instance.get_available_tools()
             
             if not tools_list:
-                print("❌ ENHANCED MCP: No tools available from direct server")
+                print("❌ ENHANCED MCP: No tools available from Local server")
                 return []
             
             # Convert list tools to LangChain compatible tools
@@ -643,17 +643,17 @@ class SharedMCPClient:
     
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Call a tool via HTTP or direct connection"""
-        if self.use_http:
-            if not self.http_client:
+        if self.use_remote:
+            if not self.remote_client:
                 if not await self.connect_to_server():
-                    raise Exception("Could not connect to HTTP MCP server")
-            return await self.http_client.call_tool(tool_name, arguments)
+                    raise Exception("Could not connect to Remote MCP server")
+            return await self.remote_client.call_tool(tool_name, arguments)
         else:
-            if not self.direct_server:
+            if not self.local_server:
                 if not await self.connect_to_server():
-                    raise Exception("Could not connect to direct MCP server")
+                    raise Exception("Could not connect to Local MCP server")
             
-            # Inject context for direct calls
+            # Inject context for Local calls
             context = get_mcp_context()
             tools_needing_context = ['bank_balance', 'bank_transfer', 'get_transaction_history', 'create_account', 'service_request']
             
@@ -665,18 +665,18 @@ class SharedMCPClient:
                 if context.get('thread_id') and 'thread_id' not in arguments:
                     arguments['thread_id'] = context['thread_id']
             
-            return await self.direct_server.call_tool_directly(tool_name, arguments)
+            return await self.local_server.call_tool_directly(tool_name, arguments)
     
     async def cleanup(self):
         """Clean up all connections"""
         print("🔄 ENHANCED MCP: Cleaning up MCP client...")
         
-        if self.http_client:
-            await self.http_client.cleanup()
-            self.http_client = None
+        if self.remote_client:
+            await self.remote_client.cleanup()
+            self.remote_client = None
         
-        if self.direct_server:
-            self.direct_server = None
+        if self.local_server:
+            self.local_server = None
         
         self.tools_cache = None
 

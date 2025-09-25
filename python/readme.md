@@ -194,7 +194,7 @@ No additional configuration needed. The MCP server runs embedded within the appl
 Set these environment variables before starting the main application:
 
 ```shell
-export MCP_USE_HTTP=true
+export USE_REMOTE_MCP_SERVER=true
 export MCP_SERVER_ENDPOINT=http://localhost:8080
 ```
 
@@ -275,8 +275,8 @@ cp .env.example .env
 cd /path/to/banking-multi-agent-workshop/python
 source .venv/bin/activate
 
-# Set environment variables to use HTTP MCP server
-export MCP_USE_HTTP=true
+# Set environment variables to use Remote MCP server
+export USE_REMOTE_MCP_SERVER=true
 export MCP_SERVER_ENDPOINT=http://localhost:8080
 
 # Start the main banking API
@@ -386,7 +386,7 @@ PYTHONPATH=src python3 -m uvicorn src.mcp_http_server:app --host 0.0.0.0 --port 
 curl http://localhost:8080/health
 
 # Check environment variables are set
-echo $MCP_USE_HTTP
+echo $USE_REMOTE_MCP_SERVER
 echo $MCP_SERVER_ENDPOINT
 
 # Test authentication endpoint

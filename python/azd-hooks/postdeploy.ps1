@@ -37,7 +37,7 @@ function Update-EnvFile {
                 if ($cleaned -match '^[A-Z_]+=' -and $cleaned -match '=.*') {
                     # Check if this is NOT an Azure/MCP variable we want to replace
                     $varName = ($cleaned -split '=')[0]
-                    if ($varName -notin @('COSMOSDB_ENDPOINT', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_EMBEDDINGDEPLOYMENTID', 'AZURE_OPENAI_COMPLETIONSDEPLOYMENTID', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'MCP_SERVER_ENDPOINT', 'MCP_USE_HTTP', 'AZURE_OPENAI_API_VERSION', 'MCP_AUTH_SECRET_KEY')) {
+                    if ($varName -notin @('COSMOSDB_ENDPOINT', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_EMBEDDINGDEPLOYMENTID', 'AZURE_OPENAI_COMPLETIONSDEPLOYMENTID', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'MCP_SERVER_ENDPOINT', 'USE_REMOTE_MCP_SERVER', 'AZURE_OPENAI_API_VERSION', 'MCP_AUTH_SECRET_KEY')) {
                         $preservedContent += $cleaned
                     }
                 }
@@ -59,7 +59,7 @@ function Update-EnvFile {
     # Add MCP client configuration (only for Python API)
     if ($includeMcpClient -and $mcpServerUrl) {
         $envContent += "MCP_SERVER_ENDPOINT=`"$mcpServerUrl`""
-        $envContent += "MCP_USE_HTTP=`"true`""
+        $envContent += "USE_REMOTE_MCP_SERVER=`"true`""
     }
     
     # Add MCP server-specific configuration (only for MCP server)

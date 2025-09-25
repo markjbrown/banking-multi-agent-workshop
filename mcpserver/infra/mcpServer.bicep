@@ -57,7 +57,7 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
               value: '8080'
             }
             {
-              name: 'MCP_USE_HTTP'
+              name: 'USE_REMOTE_MCP_SERVER'
               value: 'true'
             }
             {

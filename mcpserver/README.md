@@ -92,7 +92,7 @@ This will:
 
 ### 3. Client Integration
 
-The Python application automatically detects and uses the HTTP MCP server when `MCP_USE_HTTP=true` is set in the environment.
+The Python application automatically detects and uses the HTTP MCP server when `USE_REMOTE_MCP_SERVER=true` is set in the environment.
 
 ```python
 # The MCP client automatically switches between direct and HTTP modes
@@ -123,7 +123,7 @@ result = await client.call_tool("bank_balance", {
 | `AZURE_OPENAI_EMBEDDINGDEPLOYMENTID` | Embedding model deployment ID | Yes |
 | `JWT_SECRET` | Secret for JWT token signing | Yes |
 | `PORT` | Server port (default: 8080) | No |
-| `MCP_USE_HTTP` | Enable HTTP mode in client | No |
+| `USE_REMOTE_MCP_SERVER` | Enable Remote MCP mode in client | No |
 
 ### Client Configuration
 
@@ -132,7 +132,7 @@ The main Python application uses these additional environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MCP_SERVER_ENDPOINT` | HTTP MCP server URL | `http://localhost:8080` |
-| `MCP_USE_HTTP` | Use HTTP instead of direct calls | `false` |
+| `USE_REMOTE_MCP_SERVER` | Use Remote MCP server instead of Local calls | `false` |
 
 ## Security Considerations
 

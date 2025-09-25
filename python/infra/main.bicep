@@ -256,6 +256,18 @@ module mcpServer './app/mcpServer.bicep' = {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
         value: monitoring.outputs.applicationInsightsConnectionString
       }
+      {
+        name: 'USE_REMOTE_MCP_SERVER'
+        value: 'true'
+      }
+      {
+        name: 'JWT_SECRET'
+        value: 'your-production-jwt-secret-key'
+      }
+      {
+        name: 'AZURE_OPENAI_API_VERSION'
+        value: '2024-02-15-preview'
+      }
     ]
   }
   scope: rg

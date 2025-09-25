@@ -19,8 +19,10 @@ EXPOSE 8080
 # Set the PYTHONPATH to ensure `src` is found
 ENV PYTHONPATH=/app
 
-# Set environment variables for production
-ENV MCP_USE_HTTP=true
+# Set environment variable for Remote MCP mode
+ENV USE_REMOTE_MCP_SERVER=true
+
+# Set JWT secret for production (change this in production)
 ENV JWT_SECRET=your-production-secret-key-change-this
 
 # Run the HTTP MCP server
