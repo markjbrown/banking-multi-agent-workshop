@@ -12,9 +12,12 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('Owner name for the owner tag required by policy')
+param owner string
+
 var tags = {
   'azd-env-name': environmentName
-  'owner': 'theocon@microsoft.com'
+  'owner': owner
 }
 
 var abbrs = loadJsonContent('./abbreviations.json')
