@@ -1,6 +1,6 @@
 """
-🚀 ENHANCED MCP CLIENT - Optimized client for shared MCP server
-This client manages connections to the shared server efficiently
+🚀 ENHANCED MCP CLIENT - Remote and Local Server Support
+This client manages connections to both Remote MCP servers (HTTP) and Local server instances
 """
 import asyncio
 import subprocess
@@ -8,10 +8,14 @@ import time
 import os
 import signal
 import contextvars
+import httpx
+import jwt
 from typing import Optional, Dict, Any, List
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import StructuredTool
-from src.app.tools.mcp_server import get_cached_server_instance
+from dotenv import load_dotenv
+
+load_dotenv(override=False)
 
 # Context variables for tenant/user information
 TENANT_CONTEXT = contextvars.ContextVar('tenant_context', default=None)
@@ -36,15 +40,161 @@ def get_mcp_context():
         'thread_id': THREAD_CONTEXT.get()
     }
 
+class RemoteMCPClient:
+    """Remote MCP client for connecting to HTTP-based MCP servers"""
+    
+    def __init__(self, base_url: str = None):
+        self.base_url = base_url or os.getenv("MCP_SERVER_ENDPOINT", "http://localhost:8080")
+        self.access_token = None
+        self.tools_cache: Optional[List] = None
+        self.http_client = httpx.AsyncClient(timeout=30.0)
+        
+    async def authenticate(self) -> bool:
+        """Authenticate with the HTTP MCP server"""
+        try:
+            print(f"🔐 REMOTE MCP: Authenticating with server at {self.base_url}")
+            
+            # Get token from auth endpoint (in production, use proper OAuth2 flow)
+            response = await self.http_client.post(f"{self.base_url}/auth/token")
+            response.raise_for_status()
+            
+            token_data = response.json()
+            self.access_token = token_data.get("access_token")
+            
+            if not self.access_token:
+                print("❌ REMOTE MCP: No access token received")
+                return False
+                
+            print("✅ REMOTE MCP: Successfully authenticated")
+            return True
+            
+        except Exception as e:
+            print(f"❌ HTTP MCP: Authentication failed: {e}")
+            return False
+    
+    async def connect_to_server(self) -> bool:
+        """Connect to the HTTP MCP server"""
+        try:
+            print(f"🔌 REMOTE MCP: Connecting to server at {self.base_url}")
+            
+            # Authenticate first
+            if not await self.authenticate():
+                return False
+            
+            # Test connection with health check
+            headers = {"Authorization": f"Bearer {self.access_token}"}
+            response = await self.http_client.get(f"{self.base_url}/health", headers=headers)
+            response.raise_for_status()
+            
+            health_data = response.json()
+            print(f"✅ REMOTE MCP: Connected to server (status: {health_data.get('status')})")
+            
+            # Get available tools
+            response = await self.http_client.get(f"{self.base_url}/tools", headers=headers)
+            response.raise_for_status()
+            
+            tools_data = response.json()
+            self.tools_cache = tools_data
+            
+            print(f"🛠️  REMOTE MCP: Retrieved {len(self.tools_cache)} tools")
+            for tool in self.tools_cache:
+                print(f"   - {tool.get('name', 'unknown')}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ HTTP MCP: Failed to connect to server: {e}")
+            return False
+    
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Call a tool via HTTP API"""
+        if not self.access_token:
+            if not await self.authenticate():
+                raise Exception("Could not authenticate with HTTP MCP server")
+        
+        call_start = time.time()
+        print(f"📞 REMOTE MCP: Calling tool '{tool_name}' via HTTP")
+        print(f"🔧 DEBUG: Tool arguments: {arguments}")
+        
+        # Inject context information
+        context = get_mcp_context()
+        
+        request_data = {
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "tenant_id": context.get('tenantId'),
+            "user_id": context.get('userId'),
+            "thread_id": context.get('thread_id')
+        }
+        
+        print(f"🔧 DEBUG REMOTE CLIENT: Making request to {self.base_url}/tools/call")
+        print(f"🔧 DEBUG REMOTE CLIENT: Request data: {request_data}")
+        
+        try:
+            headers = {"Authorization": f"Bearer {self.access_token}"}
+            response = await self.http_client.post(
+                f"{self.base_url}/tools/call",
+                json=request_data,
+                headers=headers
+            )
+            response.raise_for_status()
+            
+            result_data = response.json()
+            call_time = (time.time() - call_start) * 1000
+            
+            if result_data.get("success"):
+                print(f"✅ REMOTE MCP: Tool call completed in {call_time:.2f}ms")
+                return result_data.get("result")
+            else:
+                error_msg = result_data.get("error", "Unknown error")
+                print(f"❌ REMOTE MCP: Tool call failed in {call_time:.2f}ms: {error_msg}")
+                raise Exception(error_msg)
+                
+        except Exception as e:
+            call_time = (time.time() - call_start) * 1000
+            print(f"❌ REMOTE MCP: Tool call failed in {call_time:.2f}ms: {e}")
+            raise
+    
+    async def get_tools(self) -> List[Dict[str, Any]]:
+        """Get available tools from HTTP server"""
+        if not self.tools_cache:
+            if not await self.connect_to_server():
+                raise Exception("Could not connect to Remote MCP server to get tools")
+        
+        # Convert HTTP server tool format to expected MCP format
+        mcp_tools = []
+        for tool in self.tools_cache:
+            mcp_tool = {
+                'name': tool.get('name'),
+                'description': tool.get('description'),
+                'input_schema': tool.get('input_schema', {}),
+                'parameters': tool.get('parameters', {})  # ← PRESERVE parameters for SharedMCP client
+            }
+            mcp_tools.append(mcp_tool)
+        
+        return mcp_tools
+    
+    async def cleanup(self):
+        """Clean up HTTP client"""
+        print("🔄 REMOTE MCP: Cleaning up Remote MCP client...")
+        if self.http_client:
+            await self.http_client.aclose()
+        self.access_token = None
+        self.tools_cache = None
+
 class SharedMCPClient:
-    """Enhanced MCP client with connection pooling and management"""
+    """Enhanced MCP client with Remote and Local server support"""
     
     def __init__(self):
+        self.remote_client: Optional[RemoteMCPClient] = None
+        self.local_server = None
+        self.use_remote = os.getenv("USE_REMOTE_MCP_SERVER", "false").lower() == "true"
+        self.tools_cache: Optional[List] = None
+        
+        # Legacy stdio support
         self.server_process: Optional[subprocess.Popen] = None
         self.client: Optional[MultiServerMCPClient] = None
-        self.tools_cache: Optional[List] = None
         self.server_ready = False
-        self.server_start_time = 0
         
     async def start_shared_server(self) -> bool:
         """Start the shared MCP server as a background process"""
@@ -93,52 +243,45 @@ class SharedMCPClient:
             return False
     
     async def connect_to_server(self) -> bool:
-        """Connect to the direct shared server (no subprocess)"""
-        try:
-            print("🔌 ENHANCED MCP: Connecting to DIRECT shared server functions...")
-            
-            # Direct import and connection to shared server
-            from src.app.tools.mcp_server import get_cached_server_instance
-            
-            # Get the cached server instance (this is async)
-            self.direct_server = await get_cached_server_instance()
-            
-            if not self.direct_server:
-                print("❌ ENHANCED MCP: No server instance received")
-                return False
-            
-            # Get available tools from direct server
+        """Connect to either HTTP or direct server based on configuration"""
+        if self.use_remote:
+            print("🌐 ENHANCED MCP: Using Remote MCP server (HTTP)")
+            self.remote_client = RemoteMCPClient()
+            return await self.remote_client.connect_to_server()
+        else:
+            print("🔗 ENHANCED MCP: Using Local MCP server")
             try:
-                tools_info = self.direct_server.get_available_tools()  # This is synchronous, not async
+                from src.app.tools.mcp_server import get_cached_server_instance
+                self.local_server = await get_cached_server_instance()
+                
+                if not self.local_server:
+                    print("❌ ENHANCED MCP: No Local server instance available")
+                    return False
+                
+                tools_info = self.local_server.get_available_tools()
                 self.tools_cache = tools_info if isinstance(tools_info, list) else []
+                
+                print(f"🛠️  ENHANCED MCP: Connected to Local server with {len(self.tools_cache)} tools")
+                return True
+                
             except Exception as e:
-                print(f"⚠️  ENHANCED MCP: Error getting tools: {e}")
-                self.tools_cache = []
-                
-            if not self.tools_cache:
-                print("❌ ENHANCED MCP: No tools available from direct server")
+                print(f"❌ ENHANCED MCP: Failed to connect to Local server: {e}")
                 return False
-                
-            print(f"🛠️  ENHANCED MCP: Connected to direct server with {len(self.tools_cache)} tools:")
-            for tool in self.tools_cache:
-                name = tool.get('name', 'unknown') if isinstance(tool, dict) else str(tool)
-                print(f"   - {name}")
-            
-            return True
-            
-        except Exception as e:
-            print(f"❌ ENHANCED MCP: Failed to connect to direct server: {e}")
-            return False
     
     async def get_tools(self):
         """Get LangChain-compatible tools from the shared MCP server."""
         try:
-            print("🔧 ENHANCED MCP: Getting tools from direct server")
-            server_instance = await get_cached_server_instance()
-            tools_list = server_instance.get_available_tools()
+            if self.use_remote and self.remote_client:
+                print("🔧 ENHANCED MCP: Getting tools from Remote server")
+                tools_list = await self.remote_client.get_tools()
+            else:
+                print("🔧 ENHANCED MCP: Getting tools from Local server")
+                from src.app.tools.mcp_server import get_cached_server_instance
+                server_instance = await get_cached_server_instance()
+                tools_list = server_instance.get_available_tools()
             
             if not tools_list:
-                print("❌ ENHANCED MCP: No tools available from direct server")
+                print("❌ ENHANCED MCP: No tools available from Local server")
                 return []
             
             # Convert list tools to LangChain compatible tools
@@ -158,33 +301,113 @@ class SharedMCPClient:
                         async def tool_execution(*args, **kwargs):
                             """Execute tool through context-aware call_tool method."""
                             print(f"🚀 TOOL EXECUTION: Calling {captured_tool_name} with args={args}, kwargs={kwargs}")
+                            print(f"🔧 DEBUG: INITIAL - args type: {type(args)}, len: {len(args)}")
+                            print(f"🔧 DEBUG: INITIAL - kwargs type: {type(kwargs)}, keys: {list(kwargs.keys()) if kwargs else 'None'}")
+                            print(f"🔧 DEBUG: INITIAL - kwargs content: {kwargs}")
+                            
+                            # Special case: if LangGraph passes parameters directly as kwargs (which it should)
+                            if captured_tool_name == "bank_transfer" and not args and kwargs:
+                                # Check if we have the expected bank_transfer parameters directly in kwargs
+                                expected_params = ["fromAccount", "toAccount", "amount"]
+                                has_direct_params = any(param in kwargs for param in expected_params)
+                                print(f"🔧 DEBUG: bank_transfer direct kwargs check - has_direct_params: {has_direct_params}")
+                                if has_direct_params:
+                                    print(f"🔧 DEBUG: bank_transfer using direct kwargs - parameters already correct")
+                                    # Parameters are already in the right place, no mapping needed
+                                    pass
                             
                             # Enhanced parameter mapping for tools with specific parameter needs
                             if captured_tool_name == "bank_balance" and args and not kwargs.get("account_number"):
                                 kwargs["account_number"] = args[0]
                                 print(f"🔧 DEBUG: Fixed bank_balance args - account_number: {args[0]}")
                             
-                            elif captured_tool_name == "get_offer_information" and args and not kwargs:
+                            elif captured_tool_name == "get_offer_information" and (
+                                (args and not kwargs) or 
+                                (kwargs.get('args') and len(args) == 0)
+                            ):
                                 # Map positional args to expected parameters
-                                if len(args) >= 1:
-                                    kwargs["prompt"] = args[0]
-                                if len(args) >= 2:
-                                    kwargs["type"] = args[1] 
+                                actual_args = args if args else kwargs.get('args', ())
+                                if len(actual_args) >= 1:
+                                    kwargs["prompt"] = actual_args[0]
+                                if len(actual_args) >= 2:
+                                    kwargs["type"] = actual_args[1]
+                                # Remove the 'args' key if it exists
+                                kwargs.pop('args', None)
                                 print(f"🔧 DEBUG: Fixed get_offer_information args - prompt: {kwargs.get('prompt', 'N/A')}, type: {kwargs.get('type', 'N/A')}")
                             
-                            elif captured_tool_name == "bank_transfer" and args and not kwargs:
+                            elif captured_tool_name == "bank_transfer" and (
+                                (args and not kwargs) or 
+                                (kwargs.get('args') and len(args) == 0)
+                            ):
                                 # Map positional args to bank transfer parameters
+                                actual_args = args if args else kwargs.get('args', ())
                                 param_names = ["fromAccount", "toAccount", "amount", "tenantId", "userId", "thread_id"]
-                                for i, arg in enumerate(args[:len(param_names)]):
+                                for i, arg in enumerate(actual_args[:len(param_names)]):
                                     kwargs[param_names[i]] = arg
-                                print(f"🔧 DEBUG: Fixed bank_transfer args - mapped {len(args)} parameters")
+                                # Remove the 'args' key if it exists
+                                kwargs.pop('args', None)
+                                print(f"🔧 DEBUG: Fixed bank_transfer args - mapped {len(actual_args)} parameters")
                             
-                            elif captured_tool_name == "get_transaction_history" and args and not kwargs:
+                            elif captured_tool_name == "bank_transfer" and not args and (not kwargs or not any(k for k in kwargs.keys() if k != 'args')):
+                                # Handle case where bank_transfer is called with no meaningful arguments
+                                print(f"🔧 DEBUG: bank_transfer called with no arguments - this suggests the agent isn't providing required parameters")
+                                print(f"🔧 DEBUG: The agent should provide: fromAccount, toAccount, amount, tenantId, userId, thread_id")
+                                print(f"🔧 DEBUG: This is likely a prompt/instruction issue with the LangGraph agent")
+                                # We can't fix this here - the agent needs to provide the transfer details
+                                # Let it fall through to call_tool which will return an appropriate error
+                            
+                            elif captured_tool_name == "get_transaction_history" and (
+                                (args and not kwargs) or 
+                                (kwargs.get('args') and len(args) == 0)
+                            ):
                                 # Map positional args to transaction history parameters
+                                actual_args = args if args else kwargs.get('args', ())
                                 param_names = ["account_number", "start_date", "end_date", "tenantId", "userId"]
-                                for i, arg in enumerate(args[:len(param_names)]):
+                                for i, arg in enumerate(actual_args[:len(param_names)]):
                                     kwargs[param_names[i]] = arg
-                                print(f"🔧 DEBUG: Fixed get_transaction_history args - mapped {len(args)} parameters")
+                                # Remove the 'args' key if it exists
+                                kwargs.pop('args', None)
+                                print(f"🔧 DEBUG: Fixed get_transaction_history args - mapped {len(actual_args)} parameters")
+                            
+                            elif captured_tool_name == "calculate_monthly_payment" and (
+                                (args and not kwargs) or 
+                                (kwargs.get('args') and len(args) == 0)
+                            ):
+                                # Map positional args to loan calculation parameters
+                                actual_args = args if args else kwargs.get('args', ())
+                                if len(actual_args) >= 1:
+                                    kwargs["loan_amount"] = actual_args[0]
+                                if len(actual_args) >= 2:
+                                    kwargs["years"] = actual_args[1]
+                                # Remove the 'args' key if it exists
+                                kwargs.pop('args', None)
+                                print(f"🔧 DEBUG: Fixed calculate_monthly_payment args - loan_amount: {kwargs.get('loan_amount')}, years: {kwargs.get('years')}")
+                            
+                            elif captured_tool_name == "create_account" and (
+                                (args and not kwargs) or 
+                                (kwargs.get('args') and len(args) == 0)
+                            ):
+                                # Map positional args to create account parameters
+                                actual_args = args if args else kwargs.get('args', ())
+                                param_names = ["account_holder", "balance", "tenantId", "userId"]
+                                for i, arg in enumerate(actual_args[:len(param_names)]):
+                                    kwargs[param_names[i]] = arg
+                                # Remove the 'args' key if it exists
+                                kwargs.pop('args', None)
+                                print(f"🔧 DEBUG: Fixed create_account args - mapped {len(actual_args)} parameters")
+                            
+                            elif captured_tool_name == "service_request" and (
+                                (args and not kwargs) or 
+                                (kwargs.get('args') and len(args) == 0)
+                            ):
+                                # Map positional args to service request parameters
+                                actual_args = args if args else kwargs.get('args', ())
+                                param_names = ["recipientPhone", "recipientEmail", "requestSummary", "tenantId", "userId"]
+                                for i, arg in enumerate(actual_args[:len(param_names)]):
+                                    kwargs[param_names[i]] = arg
+                                # Remove the 'args' key if it exists
+                                kwargs.pop('args', None)
+                                print(f"🔧 DEBUG: Fixed service_request args - mapped {len(actual_args)} parameters")
                             
                             # Generic fallback for other tools with single parameter
                             elif args and not kwargs:
@@ -208,6 +431,7 @@ class SharedMCPClient:
                     
                     # Get parameter schema if available
                     parameters = tool_dict.get('parameters', {})
+                    print(f"🔧 DEBUG: Processing tool {tool_name}, parameters: {parameters}")
                     
                     # Create StructuredTool with proper parameter schema for tools that need parameters
                     if tool_name == "bank_balance" and parameters:
@@ -240,7 +464,34 @@ class SharedMCPClient:
                         )
                     
                     elif tool_name == "bank_transfer" and parameters:
-                        # Bank transfer tool with required parameters
+                        print(f"🔧 DEBUG: Creating WRAPPER FUNCTION for bank_transfer tool with parameters: {parameters}")
+                        # Bank transfer tool with required parameters - create proper function signature
+                        # Use closure to capture self reference
+                        def create_bank_transfer_wrapper(client_ref):
+                            async def bank_transfer_wrapper(fromAccount: str, toAccount: str, amount: float, tenantId: str, userId: str, thread_id: str):
+                                """Bank transfer wrapper with proper Pydantic signature"""
+                                print(f"🚀 BANK_TRANSFER_WRAPPER: Called with fromAccount={fromAccount}, toAccount={toAccount}, amount={amount}")
+                                kwargs = {
+                                    "fromAccount": fromAccount,
+                                    "toAccount": toAccount, 
+                                    "amount": amount,
+                                    "tenantId": tenantId,
+                                    "userId": userId,
+                                    "thread_id": thread_id
+                                }
+                                try:
+                                    print(f"🔧 BANK_TRANSFER_WRAPPER: Calling client_ref.call_tool with kwargs: {kwargs}")
+                                    result = await client_ref.call_tool("bank_transfer", kwargs)
+                                    print(f"🔧 BANK_TRANSFER_WRAPPER: Got result: {result}")
+                                    return result
+                                except Exception as e:
+                                    print(f"❌ BANK_TRANSFER_WRAPPER: Exception occurred: {e}")
+                                    raise
+                            return bank_transfer_wrapper
+                        
+                        # Create wrapper with proper client reference
+                        bank_transfer_func = create_bank_transfer_wrapper(self)
+                        
                         from pydantic import BaseModel, Field
                         
                         class BankTransferInput(BaseModel):
@@ -252,14 +503,30 @@ class SharedMCPClient:
                             thread_id: str = Field(description="Thread ID for the transaction")
                         
                         structured_tool = StructuredTool.from_function(
-                            coroutine=tool_func,
+                            coroutine=bank_transfer_func,
                             name=tool_name,
                             description=tool_dict.get('description', f'Execute {tool_name}'),
                             args_schema=BankTransferInput
                         )
                     
                     elif tool_name == "get_transaction_history" and parameters:
-                        # Transaction history tool with date parameters
+                        # Transaction history tool with proper wrapper function
+                        def create_transaction_history_wrapper(client_ref):
+                            async def transaction_history_wrapper(account_number: str, start_date: str, end_date: str, tenantId: str, userId: str):
+                                """Transaction history wrapper with proper Pydantic signature"""
+                                print(f"🚀 TRANSACTION_HISTORY_WRAPPER: Called with account_number={account_number}, start_date={start_date}, end_date={end_date}")
+                                kwargs = {
+                                    "account_number": account_number,
+                                    "start_date": start_date,
+                                    "end_date": end_date,
+                                    "tenantId": tenantId,
+                                    "userId": userId
+                                }
+                                return await client_ref.call_tool("get_transaction_history", kwargs)
+                            return transaction_history_wrapper
+                        
+                        transaction_history_func = create_transaction_history_wrapper(self)
+                        
                         from pydantic import BaseModel, Field
                         
                         class TransactionHistoryInput(BaseModel):
@@ -270,7 +537,7 @@ class SharedMCPClient:
                             userId: str = Field(description="User ID")
                         
                         structured_tool = StructuredTool.from_function(
-                            coroutine=tool_func,
+                            coroutine=transaction_history_func,
                             name=tool_name,
                             description=tool_dict.get('description', f'Execute {tool_name}'),
                             args_schema=TransactionHistoryInput
@@ -291,6 +558,23 @@ class SharedMCPClient:
                         )
                     
                     elif tool_name == "service_request" and parameters:
+                        # Service request tool with proper wrapper function
+                        def create_service_request_wrapper(client_ref):
+                            async def service_request_wrapper(recipientPhone: str, recipientEmail: str, requestSummary: str, tenantId: str, userId: str):
+                                """Service request wrapper with proper Pydantic signature"""
+                                print(f"🚀 SERVICE_REQUEST_WRAPPER: Called with recipientPhone={recipientPhone}, recipientEmail={recipientEmail}")
+                                kwargs = {
+                                    "recipientPhone": recipientPhone,
+                                    "recipientEmail": recipientEmail,
+                                    "requestSummary": requestSummary,
+                                    "tenantId": tenantId,
+                                    "userId": userId
+                                }
+                                return await client_ref.call_tool("service_request", kwargs)
+                            return service_request_wrapper
+                        
+                        service_request_func = create_service_request_wrapper(self)
+                        
                         from pydantic import BaseModel, Field
                         
                         class ServiceRequestInput(BaseModel):
@@ -301,7 +585,7 @@ class SharedMCPClient:
                             userId: str = Field(description="User ID for the request")
                         
                         structured_tool = StructuredTool.from_function(
-                            coroutine=tool_func,
+                            coroutine=service_request_func,
                             name=tool_name,
                             description=tool_dict.get('description', f'Execute {tool_name}'),
                             args_schema=ServiceRequestInput
@@ -321,6 +605,7 @@ class SharedMCPClient:
                         )
                     
                     else:
+                        print(f"🔧 DEBUG: Using GENERIC tool creation for {tool_name} (no specific schema)")
                         # Standard tool creation for transfer tools and other parameter-less tools
                         structured_tool = StructuredTool.from_function(
                             coroutine=tool_func,
@@ -357,86 +642,42 @@ class SharedMCPClient:
             return []
     
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        """Call a tool with ZERO subprocess overhead - direct function execution"""
-        if not self.direct_server:
-            if not await self.connect_to_server():
-                raise Exception("Could not connect to direct shared server")
-        
-        call_start = time.time()
-        print(f"📞 ENHANCED MCP: DIRECT calling tool '{tool_name}' (zero subprocess overhead)")
-        print(f"🔧 DEBUG: Tool arguments received: {arguments}")
-        
-        # 🚀 AUTOMATIC CONTEXT INJECTION - Fix the LLM parameter issue
-        context = get_mcp_context()
-        print(f"🔧 CONTEXT INJECTION: Retrieved context = {context}")
-        tools_needing_context = ['bank_balance', 'bank_transfer', 'get_transaction_history', 'create_account', 'service_request']
-        
-        if tool_name in tools_needing_context:
-            print(f"🔧 CONTEXT INJECTION: Tool '{tool_name}' needs context parameters")
-            print(f"🔧 CONTEXT INJECTION: Current arguments before injection: {arguments}")
-            
-            # Inject missing context parameters if available
-            if context.get('tenantId') and 'tenantId' not in arguments:
-                arguments['tenantId'] = context['tenantId']
-                print(f"🔧 CONTEXT INJECTION: Added tenantId='{context['tenantId']}'")
-            else:
-                print(f"🔧 CONTEXT INJECTION: tenantId not injected - context has: '{context.get('tenantId')}', args has: {'tenantId' in arguments}")
-            
-            if context.get('userId') and 'userId' not in arguments:
-                arguments['userId'] = context['userId']  
-                print(f"🔧 CONTEXT INJECTION: Added userId='{context['userId']}'")
-            else:
-                print(f"🔧 CONTEXT INJECTION: userId not injected - context has: '{context.get('userId')}', args has: {'userId' in arguments}")
-            
-            if context.get('thread_id') and 'thread_id' not in arguments and tool_name in ['bank_balance', 'bank_transfer', 'get_transaction_history']:
-                arguments['thread_id'] = context['thread_id']
-                print(f"🔧 CONTEXT INJECTION: Added thread_id='{context['thread_id']}'")
-            
-            print(f"🔧 CONTEXT INJECTION: Final arguments with context: {arguments}")
+        """Call a tool via HTTP or direct connection"""
+        if self.use_remote:
+            if not self.remote_client:
+                if not await self.connect_to_server():
+                    raise Exception("Could not connect to Remote MCP server")
+            return await self.remote_client.call_tool(tool_name, arguments)
         else:
-            print(f"🔧 CONTEXT INJECTION: Tool '{tool_name}' does not need context parameters")
-        
-        try:
-            # 🚀 BREAKTHROUGH: Direct tool execution with cached services
-            result = await self.direct_server.call_tool_directly(tool_name, arguments)
-            call_time = (time.time() - call_start) * 1000
-            print(f"✅ ENHANCED MCP: DIRECT tool call completed in {call_time:.2f}ms")
-            return result
-        except Exception as e:
-            call_time = (time.time() - call_start) * 1000
-            print(f"❌ ENHANCED MCP: DIRECT tool call failed in {call_time:.2f}ms: {e}")
-            raise
+            if not self.local_server:
+                if not await self.connect_to_server():
+                    raise Exception("Could not connect to Local MCP server")
+            
+            # Inject context for Local calls
+            context = get_mcp_context()
+            tools_needing_context = ['bank_balance', 'bank_transfer', 'get_transaction_history', 'create_account', 'service_request']
+            
+            if tool_name in tools_needing_context:
+                if context.get('tenantId') and 'tenantId' not in arguments:
+                    arguments['tenantId'] = context['tenantId']
+                if context.get('userId') and 'userId' not in arguments:
+                    arguments['userId'] = context['userId']
+                if context.get('thread_id') and 'thread_id' not in arguments:
+                    arguments['thread_id'] = context['thread_id']
+            
+            return await self.local_server.call_tool_directly(tool_name, arguments)
     
     async def cleanup(self):
-        """Clean shutdown of direct server connection"""
-        print("🔄 ENHANCED MCP: Cleaning up DIRECT server connection...")
+        """Clean up all connections"""
+        print("🔄 ENHANCED MCP: Cleaning up MCP client...")
         
-        # No subprocess cleanup needed for direct calls!
-        self.direct_server = None
-        self.tools_cache = None
+        if self.remote_client:
+            await self.remote_client.cleanup()
+            self.remote_client = None
         
-        # Legacy subprocess cleanup (if fallback was used)
-        if self.client:
-            try:
-                await self.client.close()
-            except:
-                pass
-            self.client = None
+        if self.local_server:
+            self.local_server = None
         
-        if self.server_process and self.server_process.poll() is None:
-            try:
-                # Send SIGTERM to process group for clean shutdown
-                os.killpg(os.getpgid(self.server_process.pid), signal.SIGTERM)
-                self.server_process.wait(timeout=5)
-                print("✅ ENHANCED MCP: Server shut down cleanly")
-            except subprocess.TimeoutExpired:
-                print("⚠️  ENHANCED MCP: Server didn't shut down cleanly, forcing...")
-                os.killpg(os.getpgid(self.server_process.pid), signal.SIGKILL)
-            except Exception as e:
-                print(f"⚠️  ENHANCED MCP: Error during server shutdown: {e}")
-        
-        self.server_process = None
-        self.server_ready = False
         self.tools_cache = None
 
 # Global instance for reuse

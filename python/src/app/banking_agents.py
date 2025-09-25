@@ -26,6 +26,14 @@ _mcp_tools_cache: Optional[List] = None
 _native_tools_fallback_enabled = False  # 🚀 Using shared MCP server for optimal performance
 _shared_mcp_client = None  # 🚀 Enhanced shared client
 
+# 🔧 Tool version tracking for cache invalidation
+import time
+_module_load_time = time.time()
+_agents_setup_version = None
+_last_setup_time = None
+
+print(f"🔧 MODULE LOAD: banking_agents module loaded at {_module_load_time}")
+
 local_interactive_mode = False
 
 logging.basicConfig(level=logging.DEBUG)
@@ -68,6 +76,7 @@ async def get_persistent_mcp_client():
     global _persistent_mcp_client, _mcp_tools_cache, _shared_mcp_client
     
     if _persistent_mcp_client is None:
+        print("🔧 MCP CLIENT: Creating new MCP client and tools")
         print("🔄 Initializing SHARED MCP client (high-performance setup)...")
         start_time = time.time()
         
@@ -107,32 +116,37 @@ async def get_persistent_mcp_client():
                 
         except Exception as e:
             print(f"❌ Failed to initialize SHARED MCP client: {e}")
-            print("🔄 Falling back to lightweight MCP server...")
-            
-            # Fallback to lightweight MCP server
-            try:
-                _persistent_mcp_client = MultiServerMCPClient({
-                    "banking_tools": {
-                        "command": "python3",
-                        "args": ["-m", "src.app.tools.lightweight_mcp_server"], 
-                        "transport": "stdio",
-                    },
-                })
-                
-                _mcp_tools_cache = await _persistent_mcp_client.get_tools()
-                print(f"✅ Lightweight MCP fallback activated")
-            except Exception as fallback_error:
-                print(f"❌ Lightweight MCP fallback also failed: {fallback_error}")
-                raise Exception("Both shared and lightweight MCP initialization failed")
+            raise Exception("Failed to initialize MCP client")
     
     return _persistent_mcp_client, _mcp_tools_cache
 
 async def setup_agents():
     global coordinator_agent, customer_support_agent, transactions_agent, sales_agent
+    
+    print("🔧 SETUP: Setting up agents with fresh MCP client...")
+    
+    # Clear all caches when explicitly recreating (e.g., after module reload)
+    global _persistent_mcp_client, _shared_mcp_client
+    _persistent_mcp_client = None
+    _shared_mcp_client = None
+    _mcp_tools_cache = None
+    coordinator_agent = None
+    customer_support_agent = None
+    
+    # 🔧 CRITICAL FIX: Also clear the SharedMCPClient's global cache
+    from src.app.tools.mcp_client import cleanup_shared_mcp_client
+    await cleanup_shared_mcp_client()
+    print("🔧 SETUP: Cleared SharedMCPClient global cache")  
+    transactions_agent = None
+    sales_agent = None
+    print("🔧 CLEARED: All agent and MCP client caches cleared for fresh setup")
 
     print("Setting up agents with persistent MCP client...")
     
     # Get persistent client and cached tools
+    _shared_mcp_client = None
+    print("🔧 DEBUG: Cleared MCP client cache - forcing tool regeneration")
+    
     mcp_client, all_tools = await get_persistent_mcp_client()
 
     # Assign tools to agents based on tool name prefix
@@ -140,6 +154,16 @@ async def setup_agents():
     support_tools = filter_tools_by_prefix(all_tools, ["service_request", "get_branch_location", "transfer_to_sales_agent", "transfer_to_transactions_agent"])
     sales_tools = filter_tools_by_prefix(all_tools, ["get_offer_information", "create_account", "calculate_monthly_payment", "transfer_to_customer_support_agent", "transfer_to_transactions_agent"])
     transactions_tools = filter_tools_by_prefix(all_tools, ["bank_transfer", "get_transaction_history", "bank_balance", "transfer_to_customer_support_agent"])
+
+    # Debug: Print tool information for transactions agent
+    print(f"🔧 DEBUG: Transactions agent tools ({len(transactions_tools)} total):")
+    for tool in transactions_tools:
+        tool_name = getattr(tool, 'name', 'UNKNOWN')
+        tool_args = getattr(tool, 'args_schema', None)
+        if tool_args:
+            print(f"  - {tool_name}: {tool_args.__name__} schema with fields {list(tool_args.__fields__.keys())}")
+        else:
+            print(f"  - {tool_name}: No args schema")
 
     # Create agents with their respective tools
     coordinator_agent = create_react_agent(model, coordinator_tools, state_modifier=load_prompt("coordinator_agent"))
@@ -300,6 +324,17 @@ async def call_sales_agent(state: MessagesState, config) -> Command[Literal["sal
 
 @traceable(run_type="llm")
 async def call_transactions_agent(state: MessagesState, config) -> Command[Literal["transactions_agent", "human"]]:
+    # 🔧 SMART REFRESH: Only recreate if module was reloaded (--reload detected)
+    global _agents_setup_version, _last_setup_time
+    if _agents_setup_version != _module_load_time:
+        print(f"🔧 DETECTED RELOAD: Module reloaded, refreshing agents (setup_version={_agents_setup_version}, module_load_time={_module_load_time})")
+        # Clear SharedMCP cache before recreating agents
+        from src.app.tools.mcp_client import cleanup_shared_mcp_client
+        await cleanup_shared_mcp_client()
+        await setup_agents()
+        _agents_setup_version = _module_load_time
+        _last_setup_time = time.time()
+    
     thread_id = config["configurable"].get("thread_id", "UNKNOWN_THREAD_ID")
     userId = config["configurable"].get("userId", "UNKNOWN_USER_ID")
     tenantId = config["configurable"].get("tenantId", "UNKNOWN_TENANT_ID")
@@ -308,9 +343,10 @@ async def call_transactions_agent(state: MessagesState, config) -> Command[Liter
     
     # Add system message with tenant/user context for the LLM to use when calling tools
     from langchain_core.messages import SystemMessage
-    
+
     system_msg_content = f"IMPORTANT: When calling the bank_balance, bank_transfer, or get_transaction_history tools, you MUST always include these exact parameters: tenantId='{tenantId}', userId='{userId}', thread_id='{thread_id}'. Do not call these tools without all required parameters."
     print(f"🔧 DEBUG: Adding system message to transactions agent: {system_msg_content}")
+
     
     # Add as proper SystemMessage object 
     system_message = SystemMessage(content=system_msg_content)
