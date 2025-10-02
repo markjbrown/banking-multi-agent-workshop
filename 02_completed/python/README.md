@@ -31,7 +31,7 @@ You can run this sample app using GitHub Codespaces (requires a GitHub account).
 
 1. Open the template (this may take several minutes):
 
-   [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/AzureCosmosDB/banking-multi-agent-workshop?branch=main&devcontainer_path=.devcontainer%2Fpython%2Fdevcontainer.json)
+   [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/AzureCosmosDB/banking-multi-agent-workshop?branch=WorkShop_v2_PythonLangGraph&devcontainer_path=.devcontainer%2Fpython%2Fdevcontainer.json)
 
 2. Move on to the [Deployment](readme.md#deployment) section.
 
