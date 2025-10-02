@@ -24,17 +24,22 @@
       ]
     }
   },
-  "postCreateCommand": "npm install -g @angular/cli && echo \"Updating API URL in environment.ts...\" && if [ -n \"$CODESPACE_NAME\" ]; then sed -i \"s|http://localhost:63280/|https://$CODESPACE_NAME-8000.app.github.dev/|g\" /workspaces/banking-multi-agent-workshop/frontend/src/environments/environment.ts; else sed -i \"s|http://localhost:63280/|http://localhost:8000/|g\" /workspaces/banking-multi-agent-workshop/frontend/src/environments/environment.ts; fi",
+  "postCreateCommand": "npm install -g @angular/cli && echo 'Updating API URL in environment.ts...' && if [ -n '$CODESPACE_NAME' ]; then sed -i 's|http://localhost:63280/|https://$CODESPACE_NAME-8000.app.github.dev/|g' /workspaces/banking-multi-agent-workshop/02_completed/frontend/src/environments/environment.ts; else sed -i 's|http://localhost:63280/|http://localhost:8000/|g' /workspaces/banking-multi-agent-workshop/02_completed/frontend/src/environments/environment.ts; fi",
   "remoteUser": "vscode",
-  "forwardPorts": [8000, 4200],
+  "forwardPorts": [8000, 8080, 4200],
   "portsAttributes": {
     "8000": {
-      "label": "ChatAPI",
+      "label": "Banking API",
+      "protocol": "http",
+      "visibility": "public"
+    },
+    "8080": {
+      "label": "MCP Server",
       "protocol": "http",
       "visibility": "public"
     },
     "4200": {
-      "label": "Frontend app",
+      "label": "Frontend App",
       "protocol": "http",
       "visibility": "public"
     }
