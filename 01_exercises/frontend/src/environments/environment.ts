@@ -1,4 +1,9 @@
+// environment.ts
+const codespaceName = (process.env.CODESPACE_NAME || '').trim();
+
 export const environment = {
   production: false,
-  apiUrl: 'http://localhost:63280/'
+  apiUrl: codespaceName
+    ? `https://${codespaceName}-8000.app.github.dev/`
+    : 'http://localhost:63280/',
 };
