@@ -7,7 +7,9 @@
       "installBicep": true
     },
     "ghcr.io/azure/azure-dev/azd:latest": {},
-    "ghcr.io/devcontainers/features/docker-in-docker:latest": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:latest": {
+      "moby": false
+    },
     "ghcr.io/devcontainers/features/node:1": {
       "version": "20"
     }
