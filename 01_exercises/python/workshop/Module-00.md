@@ -77,7 +77,7 @@ You can run this sample app and workshop virtually by using GitHub Codespaces. T
    git checkout WorkShop_v2_PythonLangGraph
    ```
 
-3. Open the repository in VS Code and select **Reopen in Container** when prompted. When asked to **Select a devcontainer.json file**, select the **Python Development Container**.
+3. Open the repository in VS Code and select **Reopen in Container** when prompted.
 
 4. Wait for the container to build and start. This is a one time operation and may take a few minutes.
 
