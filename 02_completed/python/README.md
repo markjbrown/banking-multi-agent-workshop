@@ -80,7 +80,7 @@ You can run this sample app using GitHub Codespaces (requires a GitHub account).
 1. Navigate to the `python/infra` folder:
 
    ```bash
-   cd python/infra
+   cd 02_completed/python/infra
    ```
 
 2. Log in to Azure using AZD. Follow the prompts to complete authentication:

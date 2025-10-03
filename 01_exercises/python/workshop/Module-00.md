@@ -120,7 +120,7 @@ You can run this sample app and workshop virtually by using GitHub Codespaces. T
 1. Navigate to the correct folder:
 
    ```bash
-   cd python/infra
+   cd 01_exercises/python/infra
    ```
 
 1. Log in to Azure using AZD.
