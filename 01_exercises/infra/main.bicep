@@ -12,8 +12,12 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('User email for resource tagging (required by subscription policy)')
+param azureUserUpn string
+
 var tags = {
   'azd-env-name': environmentName
+  owner: azureUserUpn
 }
 
 var abbrs = loadJsonContent('./abbreviations.json')
