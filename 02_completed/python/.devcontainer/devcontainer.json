@@ -1,25 +1,18 @@
 {
-  "name": "Python Development Container",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "name": "Python Development Container (Completed)",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/azure-cli:1": {
       "version": "latest",
       "installBicep": true
     },
     "ghcr.io/azure/azure-dev/azd:latest": {},
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {
-      "version": "24.0",
-      "moby": false,
-      "dockerDashComposeVersion": "v2",
-      "installDockerBuildx": true
+    "ghcr.io/devcontainers/features/docker-in-docker:latest": {
+      "moby": false
     },
     "ghcr.io/devcontainers/features/powershell:latest": {},
     "ghcr.io/devcontainers/features/node:1": {
       "version": "20"
-    },
-    "ghcr.io/devcontainers/features/dotnet:2": {
-      "version": "8.0",
-      "installUsingApt": true
     }
   },
   "customizations": {
