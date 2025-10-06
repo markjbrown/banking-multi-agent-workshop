@@ -1,0 +1,13 @@
+nohup: ignoring input
+INFO:     Will watch for changes in these directories: ['/home/theovk/workshop-mcp/banking-multi-agent-workshop/01_exercises/python']
+INFO:     Uvicorn running on http://0.0.0.0:63280 (Press CTRL+C to quit)
+INFO:     Started reloader process [118287] using WatchFiles
+INFO:     Started server process [118289]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[DEBUG] Retrieved Azure AD token successfully using DefaultAzureCredential.
+[DEBUG] Azure OpenAI model initialized successfully.
+[DEBUG] Connected to Cosmos DB successfully using DefaultAzureCredential.
+[DEBUG] Connected to Cosmos DB: MultiAgentBanking
+INFO:     127.0.0.1:35188 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59750 - "HEAD /docs HTTP/1.1" 200 OK
