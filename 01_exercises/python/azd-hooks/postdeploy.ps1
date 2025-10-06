@@ -83,7 +83,7 @@ function Update-EnvFile {
 # Function to upload frontend app
 function Build-And-Deploy-Frontend {
     param (
-        [string]$frontendPath = "..\frontend",
+        [string]$frontendPath = "..\..\frontend",
         [string]$webAppName,
         [string]$resourceGroup,
         [string]$buildOutput = "dist\multi-agent-app"  # Change if the output folder is different
@@ -99,7 +99,7 @@ function Build-And-Deploy-Frontend {
 	
 	# Setting ChatServiceWebApi URL in frontend app
 	$envContent = "export const environment = { apiUrl: '$apiUrl/' };"
-	$envFilePath = "$frontendPath\src\environments\environment.prod.ts"  # Adjust the path accordingly
+	$envFilePath = "src\environments\environment.prod.ts"  # Relative to frontend directory
 
 	$envContent | Out-File -FilePath $envFilePath -Encoding utf8 -Force
 
@@ -110,16 +110,54 @@ function Build-And-Deploy-Frontend {
     Write-Host "Building frontend..."
 	ng build --configuration=production
 
+    # Use cross-platform path joining
+    $zipFile = Join-Path "dist" "app.zip"
+    $buildOutputPath = Join-Path "dist" "multi-agent-app"
     
-    $zipFile = "..\frontend\dist\app.zip"
+    # Check if the standard build output exists, fallback to different structure
+    if (-not (Test-Path $buildOutputPath)) {
+        $buildOutputPath = "dist"
+        Write-Host "Using alternate build output path: $buildOutputPath"
+    }
+    
+    # Ensure dist directory exists
+    if (-not (Test-Path "dist")) {
+        New-Item -ItemType Directory -Path "dist" -Force | Out-Null
+    }
 	
 	#Delete the existing zip file if it exists
 	 if (Test-Path $zipFile) {
 		Remove-Item $zipFile -Force
 	 }
 	
-	# Compressing build output
-    Compress-Archive -Path "$frontendPath\$buildOutput\browser\*" -DestinationPath $zipFile -Force
+	# Find the actual browser output directory (Angular 17+ uses different structure)
+	$browserPath = $null
+	if (Test-Path (Join-Path $buildOutputPath "browser")) {
+	    $browserPath = Join-Path $buildOutputPath "browser"
+	} elseif (Test-Path $buildOutputPath) {
+	    # Check if build output is directly in dist folder
+	    $browserPath = $buildOutputPath
+	}
+	
+	if ($browserPath -and (Test-Path $browserPath)) {
+	    Write-Host "Compressing build output from: $browserPath"
+	    # Use cross-platform path with Get-ChildItem for better compatibility
+	    $filesToCompress = Get-ChildItem -Path $browserPath -Recurse -File
+	    if ($filesToCompress.Count -gt 0) {
+	        Compress-Archive -Path (Join-Path $browserPath "*") -DestinationPath $zipFile -Force
+	        Write-Host "Created zip file: $zipFile"
+	    } else {
+	        Write-Error "No files found in build output directory: $browserPath"
+	        return
+	    }
+	} else {
+	    Write-Error "Build output directory not found. Expected at: $buildOutputPath"
+	    Write-Host "Available directories in dist:"
+	    if (Test-Path "dist") {
+	        Get-ChildItem "dist" -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
+	    }
+	    return
+	}
 
 	Write-Host "Deploying to Azure Web App..."
 	az webapp deploy --resource-group $resourceGroup --name $webAppName --src-path $zipFile --type zip --only-show-errors
@@ -154,9 +192,9 @@ $dummyDataResponse = Read-Host "Do you want to add some dummy data for testing? 
 if ($dummyDataResponse -match "^(yes|y)$") {
     Write-Host "Adding dummy data..."
     # Load dummy data
-    Send-Data "./data/UserData.json" "userdata"
-	Send-Data "./data/AccountsData.json" "accountdata"
-	Send-Data "./data/OffersData.json" "offerdata"
+    Send-Data "../data/UserData.json" "userdata"
+	Send-Data "../data/AccountsData.json" "accountdata"
+	Send-Data "../data/OffersData.json" "offerdata"
 }
 # Update .env files in both python and mcpserver folders
 Write-Host ""
@@ -167,7 +205,7 @@ Update-EnvFile -mcpServerUrl $mcpServerUrl -targetPath "." -includeMcpClient $tr
 
 # Update MCP Server .env file (Azure services only, no MCP client config)
 # Only update root location - src/.env is redundant
-Update-EnvFile -mcpServerUrl $mcpServerUrl -targetPath "..\mcpserver" -includeMcpClient $false
+Update-EnvFile -mcpServerUrl $mcpServerUrl -targetPath "..\..\mcpserver" -includeMcpClient $false
 
 Write-Host "Both .env files updated successfully"
 
