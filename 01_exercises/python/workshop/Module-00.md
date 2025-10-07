@@ -1,6 +1,6 @@
 # Module 00 - Prerequisites - Deployment and Setup
 
-**[Home](Home.md)** - [Creating Your First Agent >](./Module-01.md)
+**[< Home](./Home.md)** - **[Creating Your First Agent >](./Module-01.md)**
 
 ## Introduction
 
@@ -30,11 +30,11 @@ This workshop covers the complete journey from basic multi-agent systems to adva
 
 Complete the following tasks in order to prepare your environment for this workshop.
 
-**Note:** These pre-requisites are a hard requirement for successful completion of this workshop. If you do not have all three you will not be able to successfully complete this workshop.
+:warning: **Important:** These pre-requisites are a hard requirement for successful completion of this workshop. If you do not have all three you will not be able to successfully complete this workshop.
 
 ### Prerequisites
 
-- Laptop or workstation with **administrator rights** (Alternatively you can run this workshop virtually in [GitHub Codespaces](https://github.com/features/codespaces))
+- Laptop or workstation with **administrator rights** You will need to install packages and apps on your machine. (Alternatively you can run this workshop virtually in [GitHub Codespaces](https://github.com/features/codespaces))
 - Azure subscription with **owner rights**
 - Subscription access to Azure OpenAI service. Start here to [Request Access to Azure OpenAI Service](https://aka.ms/oaiapply). If you have access, see below for ensuring enough quota to deploy.
 
@@ -58,7 +58,7 @@ You can choose from the following options to get started with the workshop.
 
 You can run this sample app and workshop virtually by using GitHub Codespaces. The button will open a web-based VS Code instance in your browser:
 
-:warning: **Note:** It is recommended to extend the time-out period for Codespaces in your GitHub profile. During lunchtime your Codespace may sit idle which will force you to relaunch your Codespace and you may lose any changes. To extend the time-out go to your profile in GitHub, click on Settings, then Codespaces. You can extend up to 240 minutes (4 hours). Be sure to change this back after the workshop to avoid excessive compute charges to your GitHub Codespaces.
+:bulb: **Note:** It is recommended to extend the time-out period for Codespaces in your GitHub profile. During lunchtime your Codespace may sit idle which will force you to relaunch your Codespace and you may lose any changes. To extend the time-out go to your profile in GitHub, click on Settings, then Codespaces. You can extend up to 240 minutes (4 hours). Be sure to change this back after the workshop to avoid excessive compute charges to your GitHub Codespaces.
 
 1. Open the template (this may take several minutes):
 
@@ -88,7 +88,7 @@ You can run this sample app and workshop virtually by using GitHub Codespaces. T
 #### Local Environment without VS Code Dev Containers
 
 > :warning: **NOTE**
-> For the MCP parts of the workshop in module 6 to function properly, you must be running in a Linux environment. If you are on Windows, consider installing WSL or switching to dev containers.
+> For the MCP parts of the workshop in module 6 to function properly, you must be running in a Linux environment. If you are on Windows, consider installing WSL, switching to dev containers or running in Codespaces.
 
 1. To run the workshop locally on your machine, install the following:
 
@@ -174,10 +174,10 @@ This workshop consists of 6 progressive modules:
 - **Module 2**: Connecting Agents to Memory
 - **Module 3**: Agent Specialization
 - **Module 4**: Multi-Agent Orchestration
-- **Module 5**: Lessons Learned, Agent Futures, Q&A
-- **Module 6**: Converting to Model Context Protocol (MCP)
+- **Module 5**: Converting to Model Context Protocol (MCP)
+- **Module 6**: Lessons Learned, Agent Futures, Q&A
 
-**Module 6** introduces advanced architectural patterns using the Model Context Protocol (MCP), showing how to convert your multi-agent system from native LangChain tools to a standardized, loosely-coupled architecture that enables better team collaboration and maintainability.
+**Module 5** introduces advanced architectural patterns using the Model Context Protocol (MCP), showing how to convert your multi-agent system from native LangChain tools to a standardized, loosely-coupled architecture that enables better team collaboration and maintainability.
 
 ## Activity 4: Configure Environment Variables
 
@@ -327,10 +327,8 @@ To complete this Module successfully, you should be able to:
 Proceed to [Creating Your First Agent](./Module-01.md) to begin building your multi-agent banking system. The complete learning path will take you through:
 
 1. **Modules 1-4**: Core multi-agent system development
-2. **Module 5**: Best practices and lessons learned
-3. **Module 6**: Advanced MCP architectural patterns (optional advanced topic)
-
-Module 6 provides an in-depth look at converting traditional multi-agent systems to use the Model Context Protocol for improved architecture and team collaboration.
+2. **Module 5**: Advanced MCP architectural patterns
+3. **Module 6**: Best practices, lessons learned, Q&A and wrap-up
 
 ## Resources
 
