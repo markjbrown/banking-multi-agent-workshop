@@ -74,14 +74,14 @@ hooks:
           APPLICATIONINSIGHTS_CONNECTION_STRING=\"\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"\"
           " > ../.env
 services:
-    ChatServiceWebApi:
-        project: ..
+    MCPServer:
+        project: ../../mcpserver
         host: containerapp
         language: python
         docker:
             path: ./Dockerfile
-    MCPServer:
-        project: ../../mcpserver
+    ChatServiceWebApi:
+        project: ..
         host: containerapp
         language: python
         docker:
