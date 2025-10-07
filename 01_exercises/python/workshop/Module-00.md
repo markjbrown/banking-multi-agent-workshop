@@ -20,7 +20,7 @@ This workshop covers the complete journey from basic multi-agent systems to adva
 
 1. [Activity 1: Configure Workshop Environment](#activity-1-configure-workshop-environment)
 1. [Activity 2: Deploy Azure Services](#activity-2-deploy-azure-services)
-1. [Activity 3: Workshop Structure and Overview Session](#activity-3-workshop-structure-and-overview)
+1. [Activity 3: Workshop Structure and Overview Session](#activity-3-workshop-structure-and-overview-session)
 1. [Activity 4: Configure Environment Variables](#activity-4-configure-environment-variables)
 1. [Activity 5: Compile and Run](#activity-5-compile-and-run)
 
@@ -58,6 +58,8 @@ You can choose from the following options to get started with the workshop.
 
 You can run this sample app and workshop virtually by using GitHub Codespaces. The button will open a web-based VS Code instance in your browser:
 
+:warning: **Note:** It is recommended to extend the time-out period for Codespaces in your GitHub profile. During lunchtime your Codespace may sit idle which will force you to relaunch your Codespace and you may lose any changes. To extend the time-out go to your profile in GitHub, click on Settings, then Codespaces. You can extend up to 240 minutes (4 hours). Be sure to change this back after the workshop to avoid excessive compute charges to your GitHub Codespaces.
+
 1. Open the template (this may take several minutes):
 
    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/AzureCosmosDB/banking-multi-agent-workshop/tree/WorkShop_v2_PythonLangGraph?devcontainer_path=.devcontainer/python/devcontainer.json)
@@ -85,7 +87,7 @@ You can run this sample app and workshop virtually by using GitHub Codespaces. T
 
 #### Local Environment without VS Code Dev Containers
 
-> **NOTE**
+> :warning: **NOTE**
 > For the MCP parts of the workshop in module 6 to function properly, you must be running in a Linux environment. If you are on Windows, consider installing WSL or switching to dev containers.
 
 1. To run the workshop locally on your machine, install the following:
@@ -120,13 +122,19 @@ You can run this sample app and workshop virtually by using GitHub Codespaces. T
 1. Navigate to the correct folder:
 
    ```bash
-   cd 01_exercises/python/infra/python/infra
+   cd 01_exercises/python/infra
    ```
 
 1. Log in to Azure using AZD.
 
    ```bash
    azd auth login
+   ```
+
+1. If using Codespaces, also log in to Azure CLI.
+
+   ```bash
+   az login
    ```
 
 1. Provision the Azure services and deploy the application.
@@ -153,7 +161,6 @@ Do you want to add some dummy data for testing? (yes/no): y
 
 1. Press `y` to load the data for the workshop.
 
-
 ## Activity 3: Workshop Structure and Overview Session
 
 While the Azure Services are deploying we will have a presentation to cover on the structure for this workshop for today as well as provide an introduction and overview of multi-agent systems.
@@ -179,26 +186,20 @@ When you deploy this solution it automatically injects endpoints and configurati
 But you will still need to install dependencies to run the solution locally.
 
 1. Navigate to the python folder of the project.
-2. Create and activate a virtual environment (Linux/Mac):
+2. Create and activate a virtual environment (Linux/Mac/WSL/Codespaces):
 
    ```shell
    python -m venv .venv
    source .venv/bin/activate
    ```
 
-   For Windows:
-
-   ```shell
-   python -m venv .venv
-   .venv\Scripts\Activate.ps1
-   ```
-   
 3. Install the required dependencies for the project.
 
    ```shell
    pip install -r src/app/requirements.txt
    ```
-   Note: If getting `requirements.txt` file not found when using GitHub codespaces, please navigate to the `src/app` folder and run the command there ` pip install -r requirements.txt`
+
+   Note: If getting `requirements.txt` file not found when using GitHub codespaces, please navigate to the `src/app` folder and run the command there `pip install -r requirements.txt`
 
 ## Activity 5: Compile and Run
 
@@ -213,35 +214,38 @@ But you will still need to install dependencies to run the solution locally.
 
 The API will be available at `http://localhost:63280/docs`. This has been pre-built with boilerplate code that will create chat sessions and store the chat history in Cosmos DB.
 
-#### Run the Frontend App locally
+#### Run the Frontend on local machine
 
-1. Open a new terminal, navigate to the `frontend` folder and run the following to start the application:
+1. Open a **new terminal**, navigate to the `frontend` folder and run the following to start the application:
 
    ```sh
    npm install
    ng serve
    ```
+
 1. Open your browser and navigate to <http://localhost:63280/>.
 
 #### Run the Frontend App on Codespaces
 
-
-1. Open a new terminal, navigate to the `frontend` folder and run the following to start the application:
+1. Open a **new terminal**, navigate to the `frontend` folder and run the following to start the application:
 
    ```sh
    npm install
    ng serve
    ```
+
 1. From the **Ports** tab:
    1. Right-click and select the **Port Visibility** option to set port **ChatAPI (63280)** as **Public**.
    1. For the port with the label **Frontend app**. Hover over the address and choose **Open in Browser** (second icon) to access the frontend application.
 
+### Exploring your new app
+
 Lets try a couple of things:
 
-- Try out the API by creating a chat session in the front end. This should return a response saying "Hello, I am not yet implemented".
-- Navigate to the Cosmos DB account in the Azure portal to view the containers. You should see an entry in the `Chat` container. If you selected "yes" to the option during `azd up`, there will also be some transactional data in the `OffersData`, `AccountsData`, and `Users` containers as well.
-- Take a look at the files in the `src/app/services` folder - these are the boilerplate code for interacting with the Cosmos DB and Azure OpenAI services.
-- You will also see an empty file `src/app/banking_agents.py` as well as empty files in the `src/app/tools` and `src/app/prompts` folder. This is where you will build your multi-agent system!
+1. Try out the API by creating a chat session in the front end. This should return a response saying "Hello, I am not yet implemented".
+1. Navigate to the Cosmos DB account in the Azure portal to view the containers. You should see an entry in the `Chat` container. If you selected "yes" to the option during `azd up`, there will also be some transactional data in the `OffersData`, `AccountsData`, and `Users` containers as well.
+1. Take a look at the files in the `src/app/services` folder - these are the boilerplate code for interacting with the Cosmos DB and Azure OpenAI services.
+1. You will also see an empty file `src/app/banking_agents.py` as well as empty files in the `src/app/tools` and `src/app/prompts` folder. This is where you will build your multi-agent system!
 
 Next, we will start building the agents that will be served by the API layer and interact with Cosmos DB and Azure OpenAI using LangGraph!
 
@@ -257,31 +261,58 @@ Use the steps below to validate that the solution was deployed successfully.
 
 1. Errors during azd deployment:
 
-- Service principal "not found" error.
-  - Rerun `azd up`
-- If you are running on Windows with Powershell, you may get:
-  - `"error executing step command 'deploy --all': getting target resource: resource not found: unable to find a resource tagged with 'azd-service-name: ChatServiceWebApi'"`
-  - This is likely because you have used Az CLI before, and have an old default resource group name cached that is different from the one specified during `azd up`.
-  - To resolve this:
-    - Delete `.azure` in the root folder and `.azd` folders in your home directory (`C:\Users\<user name>`).
-    - Start again, but first set resource group explicitly. Replace <environment name> in the below with the name you intend to set for your environment:
-      - `azd env set AZURE_RESOURCE_GROUP rg-<environment name>`
-      - Then enter <environment name> when prompted:
-        - `Enter a new environment name: <environment name>`
-      - Run `azd auth login` again
-      - Then run `azd up` again.
+   - Service principal "not found" error.
+      - Rerun `azd up`
+   - If you are running on Windows with Powershell, you may get:
+      - `"error executing step command 'deploy --all': getting target resource: resource not found: unable to find a resource tagged with 'azd-service-name: ChatServiceWebApi'"`
+      - This is likely because you have used Az CLI before, and have an old default resource group name cached that is different from the one specified during `azd up`.
+   - To resolve this:
+      - Delete `.azure` in the root folder and `.azd` folders in your home directory (`C:\Users\<user name>`).
+      - Start again, but first set resource group explicitly. Replace <environment name> in the below with the name you intend to set for your environment:
+         - `azd env set AZURE_RESOURCE_GROUP rg-<environment name>`
+         - Then enter <environment name> when prompted:
+         - `Enter a new environment name: <environment name>`
+         - Run `azd auth login` again
+         - Then run `azd up` again.
 
 1. Azure OpenAI deployment issues:
 
-- Ensure your subscription has access to Azure OpenAI
-- Check regional availability
+   - Ensure your subscription has access to Azure OpenAI
+   - Check regional availability
 
 1. Python environment issues:
 
-- Ensure correct Python version
-- Verify all dependencies are installed
+   - Ensure correct Python version
+   - Verify all dependencies are installed
 
-1.
+1. Your Codespace times out
+
+   You need to restart your Codespace and backend and frontend for the app.
+
+   Start the backend, go to the Terminal
+
+   ```sh
+   # Navigate to the python folder
+   cd 01_exercises/python
+
+   # start the virtual environment
+   source .venv/bin/activate
+
+   #Restart the backend
+   uvicorn src.app.banking_agents_api:app --reload --host 0.0.0.0 --port 63280
+   ```
+
+   Start the front end, open a **New Terminal**
+
+   ```sh
+   # Navigate to the frontend folder
+   cd 01_exercises/frontend
+
+   # start the frontend
+   ng serve
+   ```
+
+   Be sure to check the ports for the frontend (4200) and backend (63280) are still set to Public. Click the second icon, a globe in the Ports tab to open the frontend web app.
 
 ## Success Criteria
 
@@ -304,14 +335,6 @@ Module 6 provides an in-depth look at converting traditional multi-agent systems
 ## Resources
 
 - [azd Command Reference](https://learn.microsoft.com/azure/developer/azure-developer-cli/reference)
-- [Semantic Kernel Agent Framework](https://learn.microsoft.com/semantic-kernel/frameworks/agent)
 - [LangGraph](https://langchain-ai.github.io/langgraph/concepts/)
 - [Azure OpenAI Service documentation](https://learn.microsoft.com/azure/cognitive-services/openai/)
 - [Azure Cosmos DB Vector Database](https://learn.microsoft.com/azure/cosmos-db/vector-database)
-
-<details>
-  <summary>If you prefer to run this locally on your machine, open this section and install these additional tools.</summary>
-
-<br>
-
-</details>
