@@ -1,5 +1,7 @@
 # Module 02 - Connecting Agents to Memory
 
+**[< Creating Your First Agent](./Module-01.md)** - **[Agent Specialization >](./Module-03.md)**
+
 ## Introduction
 
 In this Module, you'll connect your agent to Azure Cosmos DB for memory and state management for your agents to provide durability and context-awareness in your agent interactions.
@@ -68,7 +70,7 @@ From this point on, the agent will save its state to Azure Cosmos DB. The *Cosmo
 
 When you wired up the API layer in Module 1, Cosmos DB began storing a history of chat messages. These messages are stored for convenience, while state is being stored in the checkpoint container in Cosmos DB using the code you added above.
 
-In this application, we're taking an opinionated approach to agent routing. Instead of relying on the coordinator to use the LLM to route messages in a non-deterministic manner to the appropriate agent based on the context, we're going to store the "active agent" in the chat container in Cosmos DB (a single record maintained for each session). We're choosing to do this so that the coordinator can always deterministically route back to the active agent (if known) in a multi-turn conversation. 
+In this application, we're taking an opinionated approach to agent routing. Instead of relying on the coordinator to use the LLM to route messages in a non-deterministic manner to the appropriate agent based on the context, we're going to store the "active agent" in the chat container in Cosmos DB (a single record maintained for each session). We're choosing to do this so that the coordinator can always deterministically route back to the active agent (if known) in a multi-turn conversation.
 
 1. Remain in the **banking_agents.py** file.
 1. Locate the following code.

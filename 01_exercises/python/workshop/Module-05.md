@@ -1,6 +1,6 @@
 # Module 05 - Converting to Model Context Protocol (MCP)
 
-[< Multi-Agent Orchestration](./Module-04.md) - **[Home](Home.md)**
+**[< Multi-Agent Orchestration](./Module-04.md)** - **[Lessons Learned, Agent Futures, Q&A >](./Module-06.md)**
 
 ## Introduction
 
@@ -9,6 +9,7 @@ In this module, you'll learn how to convert your multi-agent banking application
 ## Learning Objectives
 
 By the end of this module, you will:
+
 - Understand MCP's benefits for multi-agent applications
 - Convert LangChain tools to MCP tools using `@mcp.tool()` decorators
 - Configure MCP client-server architecture
@@ -18,7 +19,6 @@ By the end of this module, you will:
 ## Why MCP?
 
 MCP provides significant architectural advantages through separation of concerns by keeping business logic (tools) separated from AI orchestration, enabling teams to work independently on different components. The protocol standardization uses JSON-RPC for reliable communication between clients and servers, ensuring consistent interaction patterns across different systems. This approach also enables development independence, where tool updates don't require AI agent redeployment, allowing for more flexible and maintainable multi-agent systems.
-
 
 ## Module Exercises
 
@@ -32,6 +32,7 @@ MCP provides significant architectural advantages through separation of concerns
 ## Activity 1: Understanding the MCP Architecture
 
 ### Current Architecture (LangChain Tools)
+
 Your current banking application uses LangChain tools directly:
 
 ```python
@@ -45,6 +46,7 @@ transactions_agent = create_react_agent(model, transactions_tools, ...)
 ```
 
 ### MCP Architecture
+
 With MCP, tools are provided by a separate server:
 
 ```python
@@ -61,6 +63,7 @@ all_tools = await load_mcp_tools(session)
 ## Activity 2: Update Banking Agents for MCP
 
 ### MCP Server Tools
+
 The MCP server (in `/mcpserver/`) provides these banking tools using `@mcp.tool()` decorators:
 
 ```python
@@ -422,6 +425,7 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(setup_agents())
 ```
+
 </details>
 
 ### Update banking_agents_api.py
@@ -564,17 +568,19 @@ Replace it with the below, making the `invoke` calls asynchronous:
 
 ## Activity 3: Start the MCP Server
 
-The MCP server is provided in the `mcpserver/` directory and includes all banking tools implemented with native `@mcp.tool()` decorators. 
+The MCP server is provided in the `mcpserver/` directory and includes all banking tools implemented with native `@mcp.tool()` decorators.
 
-> [!NOTE]
+> :warning: [!NOTE]
 > There should be a `.env` file in the `mcpserver/` directory with the necessary environment variables that was created when you did your initial deployment. If this did not work for any reason, refer to the `.env.sample` file.
 
 ### 1. Navigate to MCP Server Directory
+
 ```bash
 cd /path/to/banking-multi-agent-workshop/01_exercises/mcpserver
 ```
 
 ### 2. Install Dependencies
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -582,12 +588,14 @@ pip install -r requirements.txt
 ```
 
 ### 3. Start the MCP Server
+
 ```bash
 PYTHONPATH=src python src/mcp_http_server.py
 ```
 
 You should see output like:
-```
+
+```shell
 🚀 Initializing MCP Server...
 ✅ Banking Tools MCP server initialized with Simple Token Auth
 🔐 DEVELOPMENT AUTHENTICATION: Bearer token required
@@ -606,7 +614,7 @@ The server provides the same banking tools that you created earlier, but now as 
 
 ## Activity 4: Test the Complete System
 
-### 1. Set Environment Variables 
+### 1. Set Environment Variables
 
 In the `.env` file of the python folder, set the following:
 
@@ -629,7 +637,7 @@ uvicorn src.app.banking_agents_api:app --reload --host 0.0.0.0 --port 63280
 
 When the server has fully start, you should now see something like:
 
-```
+```shell
    Token: banking-...
    - Transport: streamable_http
    - Server URL: http://localhost:8080/mcp/
@@ -659,6 +667,7 @@ INFO:     Application startup complete.
 ```
 
 ### 3. Start the Frontend
+
 ```bash
 cd /path/to/banking-multi-agent-workshop/01_exercises/frontend
 npm install
@@ -680,18 +689,20 @@ These should behave in the same way as your original application.
 ### Verify MCP Integration
 
 Check the terminal logs to confirm:
+
 - ✅ MCP Client connects to MCP Server successfully
 - ✅ Tools are loaded dynamically from the server
 - ✅ OAuth Authentication is working (bearer token mode with simple token)
 - ✅ Agents use MCP tools
-
 
 ## Activity 5: Understanding the code changes
 
 There were a lot of changes to banking_agents.py. Below is a concise diff-style overview of what changed to enable MCP in your multi-agent banking app.
 
 ### 1. Imports & async foundation
+
 - **Added MCP + async tooling** and removed direct tool wiring.
+
     ```python
     import asyncio, json
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -699,9 +710,11 @@ There were a lot of changes to banking_agents.py. Below is a concise diff-style 
     from langchain_core.messages import ToolMessage, SystemMessage
     from langsmith import traceable
     ```
+
 - **Agent calls switched to async** (`ainvoke`) instead of sync (`invoke`).
 
 ### 2. MCP client, session, and tool loading
+
 - **Centralized MCP setup** with persistent shared session for performance; tools loaded dynamically from the unified MCP server.
 
     ```python
@@ -723,7 +736,9 @@ There were a lot of changes to banking_agents.py. Below is a concise diff-style 
     ```
 
 ### 3. Tool routing by prefix (from server → agents)
+
 - **Replaced hardcoded tool lists** with filtered MCP tools based on name prefixes.
+
     ```python
     def filter_tools_by_prefix(tools, prefixes):
         return [t for t in tools if any(t.name.startswith(p) for p in prefixes)]
@@ -739,6 +754,7 @@ There were a lot of changes to banking_agents.py. Below is a concise diff-style 
     ```
 
 ### 4. Agents created the same way, but with MCP tools
+
 ```python
 coordinator_agent      = create_react_agent(model, coordinator_tools,      state_modifier=load_prompt("coordinator_agent"))
 customer_support_agent = create_react_agent(model, support_tools,          state_modifier=load_prompt("customer_support_agent"))
@@ -747,7 +763,9 @@ transactions_agent     = create_react_agent(model, transactions_tools,     state
 ```
 
 ### 5. Async agent nodes
+
 - **Node functions are async**; agent calls use `ainvoke`.
+
     ```python
     @traceable(run_type="llm")
     async def call_sales_agent(state: MessagesState, config):
@@ -756,7 +774,9 @@ transactions_agent     = create_react_agent(model, transactions_tools,     state
     ```
 
 ### 6. Passing per-turn IDs for MCP tools
+
 - **Inject a transient `SystemMessage`** so MCP tools get `tenantId/userId/thread_id` without asking the user; remove it from the response.
+
     ```python
     state["messages"].append({"role":"system",
         "content": f"If tool ... requires tenantId='{tenantId}', userId='{userId}', thread_id='{thread_id}', include these in the JSON parameters."})
@@ -767,7 +787,9 @@ transactions_agent     = create_react_agent(model, transactions_tools,     state
     ```
 
 ### 7. Conditional routing via ToolMessage (`goto`)
+
 - **New `get_active_agent`** reads the last `ToolMessage` (emitted by MCP tools) for a `"goto"` hint; falls back to Cosmos DB.
+
     ```python
     def get_active_agent(state, config) -> str:
         for msg in reversed(state["messages"]):
@@ -777,7 +799,9 @@ transactions_agent     = create_react_agent(model, transactions_tools,     state
         # fallback to DB 'activeAgent'
         ...
     ```
+
 - **Added conditional edges** from coordinator based on that resolver.
+
     ```python
     builder.add_conditional_edges(
         "coordinator_agent",
@@ -809,7 +833,8 @@ PYTHONPATH=src python3 src/mcp_http_server.py
 ```
 
 You should see output like:
-```
+
+```shell
 🚀 Initializing MCP Server...
 ✅ Banking Tools MCP server initialized with Simple Token Auth
 🌐 Server will be available at: http://0.0.0.0:8080
@@ -851,16 +876,19 @@ You should see output like:
 ### 4. Example Interactions
 
 **Test Branch Locations:**
+
 - Tool: `get_branch_location`
 - Parameter: `state = "California"`
 - Expected Result: List of bank branches in California counties
 
 **Test Server Info:**
+
 - Tool: `server_info` 
 - Parameters: (none required)
 - Expected Result: MCP server information and status
 
 **Test Account Tools:**
+
 - Tool: `bank_balance`
 - Parameters: Provide account number, tenant ID, user ID, thread ID
 - Expected Result: Account balance information
@@ -877,6 +905,7 @@ If you encounter issues:
 ### 7. Understanding MCP Client-Server Interaction
 
 This hands-on experience helps you understand:
+
 - **Protocol Communication**: How MCP clients discover and call tools
 - **Authentication Flow**: Bearer token authentication in action
 - **Tool Discovery**: Dynamic tool loading from the server
@@ -893,6 +922,7 @@ If you're curious about what VS Code created automatically, it stores MCP server
 - **Linux**: `~/.config/Code/User/mcp.json`
 
 The configuration looks like this:
+
 ```json
 {
   "servers": {
@@ -924,4 +954,3 @@ Return to **[Home](Home.md)**
 - [LangChain MCP Integration](https://python.langchain.com/docs/integrations/tools/mcp/)
 - [Azure OpenAI Service](https://learn.microsoft.com/azure/cognitive-services/openai/)
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
-

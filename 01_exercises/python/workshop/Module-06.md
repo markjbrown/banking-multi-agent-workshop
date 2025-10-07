@@ -1,6 +1,6 @@
 # Module 06 - Lessons Learned, Agent Futures, Q&A
 
-[< Multi-Agent Orchestration](./Module-04.md) - **[Home](Home.md)** - [Converting to Model Context Protocol (MCP) >](./Module-06.md)
+**[< Converting to Model Context Protocol](./Module-05.md)** - **[Home >](./Home.md)**
 
 ## Introduction
 
@@ -18,7 +18,6 @@ In this Module we will wrap up what you have learned during this workshop. We wi
 1. [Activity 1: Session Lessons Learned Building This Workshop](#activity-1-session-lessons-learned-building-this-workshop)
 2. [Activity 2: Q&A](#activity-2-q-and-a)
 
-
 ## Activity 1: Session Lessons Learned Building This Workshop
 
 In this session ...
@@ -27,17 +26,17 @@ In this session ...
 
 In this session ...
 
-
 ## Wrap up and Conclusion
 
 Thanks!!!
 
-Return to **[Home](Home.md)**
-
+Return to **[Home](./Home.md)**
 
 ## Resources
 
-- [Semantic Kernel Agent Framework](https://learn.microsoft.com/semantic-kernel/frameworks/agent)
 - [LangGraph](https://langchain-ai.github.io/langgraph/concepts/)
 - [Azure OpenAI Service documentation](https://learn.microsoft.com/azure/cognitive-services/openai/)
 - [Azure Cosmos DB Vector Database](https://learn.microsoft.com/azure/cosmos-db/vector-database)
+- [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
+- [FastMCP Documentation](https://github.com/jlowin/fastmcp)
+- [LangChain MCP Integration](https://python.langchain.com/docs/integrations/tools/mcp/)
