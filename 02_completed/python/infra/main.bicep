@@ -149,7 +149,7 @@ module AssignRoles './shared/assignroles.bicep' = {
 
 
 
-// Deploy MCP Server Container App
+// STEP 1: Deploy MCP Server Container App FIRST
 module mcpServer './app/mcpServer.bicep' = {
   name: 'mcpServer'
   params: {
@@ -208,10 +208,10 @@ module mcpServer './app/mcpServer.bicep' = {
     ]
   }
   scope: rg
-  dependsOn: [cosmos, monitoring, openAi, AssignRoles]
+  dependsOn: [cosmos, monitoring, openAi, AssignRoles, appsEnv, registry]
 }
 
-// Deploy ChatAPI Container App
+// STEP 2: Deploy ChatAPI Container App AFTER MCP Server is fully deployed
 module ChatAPI './app/ChatAPI.bicep' = {
   name: 'ChatAPI'
   params: {
@@ -303,7 +303,8 @@ module ChatAPI './app/ChatAPI.bicep' = {
     ]
   }
   scope: rg
-  dependsOn: [cosmos, monitoring, openAi, mcpServer]
+  // Explicitly depend on MCP Server being fully deployed first
+  dependsOn: [mcpServer]
 }
 
 module webApp './app/webApp.bicep' = {

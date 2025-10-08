@@ -87,13 +87,25 @@ resource chatservicewebapi 'Microsoft.App/containerApps@2024-02-02-preview' = {
 				name: 'AZURE_CLIENT_ID'
 				value: identity.properties.clientId
 			  }
+			  {
+				name: 'MCP_CONNECTION_RETRY_ATTEMPTS'
+				value: '5'
+			  }
+			  {
+				name: 'MCP_CONNECTION_RETRY_DELAY'
+				value: '30'
+			  }
+			  {
+				name: 'STARTUP_DELAY_SECONDS'
+				value: '60'
+			  }
             ],
             envSettings
           )
           resources: {
             cpu: json('1.0')
             memory: '2.0Gi'
-          }  
+          }
         }
       ]
       scale: {
