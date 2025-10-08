@@ -216,18 +216,18 @@ The API will be available at `http://localhost:63280/docs`. This has been pre-bu
 
 #### Run the Frontend on local machine
 
-1. Open a **new terminal**, navigate to the `frontend` folder and run the following to start the application:
+1. Open a **new terminal**, navigate to the `01_exercises/frontend` folder and run the following to start the application:
 
    ```sh
    npm install
    ng serve
    ```
 
-1. Open your browser and navigate to <http://localhost:63280/>.
+1. Open your browser and navigate to <http://localhost:4200/>.
 
 #### Run the Frontend App on Codespaces
 
-1. Open a **new terminal**, navigate to the `frontend` folder and run the following to start the application:
+1. Open a **new terminal**, navigate to the `01_exercises/frontend` folder and run the following to start the application:
 
    ```sh
    npm install
