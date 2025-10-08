@@ -84,6 +84,9 @@ def create_account(account_holder: str, balance: float, config: RunnableConfig) 
 
 ### Update banking_agents.py
 
+> :warning: [!NOTE]
+> If you still have banking_agents_api.py running in a terminal, you will initially see errors when updating banking_agents.py with the code below, so its recommended to stop it for now.
+
 Replace your `src/app/banking_agents.py` with this MCP-enabled version:
 
 <details>
@@ -620,9 +623,9 @@ In the `.env` file of the python folder, set the following:
 
 ```bash
 # Set MCP configuration
-export USE_REMOTE_MCP_SERVER=true
-export MCP_SERVER_BASE_URL=http://localhost:8080
-export MCP_AUTH_TOKEN=banking-server-prod-token-2025
+USE_REMOTE_MCP_SERVER=true
+MCP_SERVER_BASE_URL=http://localhost:8080
+MCP_AUTH_TOKEN=banking-server-prod-token-2025
 ```
 
 ### 2. Start the Banking API
