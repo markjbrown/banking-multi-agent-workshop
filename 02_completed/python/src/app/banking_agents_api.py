@@ -1,6 +1,8 @@
 import os
 import uuid
 import fastapi
+import time
+import asyncio
 
 from dotenv import load_dotenv
 
@@ -33,7 +35,12 @@ import logging
 import asyncio
 from src.app.banking_agents import setup_agents
 
-
+# Handle startup delay to allow MCP server to be ready
+startup_delay = int(os.getenv("STARTUP_DELAY_SECONDS", "0"))
+if startup_delay > 0:
+    print(f"[STARTUP] 🕐 Waiting {startup_delay} seconds for MCP server to be ready...")
+    time.sleep(startup_delay)
+    print(f"[STARTUP] ✅ Startup delay completed, proceeding with initialization")
 
 # Setup logging
 logging.basicConfig(level=logging.ERROR)

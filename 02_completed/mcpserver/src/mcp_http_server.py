@@ -25,6 +25,10 @@ from services.azure_cosmos_db import (
     fetch_transactions_by_date_range,
 )
 
+# Configure logging for debugging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # Try to import OAuth support for MCP
 try:
     from dotenv import load_dotenv
@@ -38,16 +42,24 @@ try:
     load_dotenv('.env.oauth')  # Load OAuth configuration
     OAUTH_AVAILABLE = True
     
+    print("[DEBUG] 🔐 MCP Server Authentication Configuration:")
+    logger.info("🔐 MCP Server Authentication Configuration:")
+    
     # Load authentication configuration
     github_client_id = os.getenv("GITHUB_CLIENT_ID")
     github_client_secret = os.getenv("GITHUB_CLIENT_SECRET")
     simple_token = os.getenv("MCP_AUTH_TOKEN")
     base_url = os.getenv("MCP_SERVER_BASE_URL", "http://localhost:8080")
     
-    print("🔐 Authentication Configuration:")
     print(f"   Simple Token: {'SET' if simple_token else 'NOT SET'}")
     print(f"   GitHub Client ID: {'SET' if github_client_id else 'NOT SET'}")
     print(f"   GitHub Client Secret: {'SET' if github_client_secret else 'NOT SET'}")
+    print(f"   Base URL: {base_url}")
+    
+    logger.info(f"   Simple Token: {'SET' if simple_token else 'NOT SET'}")
+    logger.info(f"   GitHub Client ID: {'SET' if github_client_id else 'NOT SET'}")
+    logger.info(f"   GitHub Client Secret: {'SET' if github_client_secret else 'NOT SET'}")
+    logger.info(f"   Base URL: {base_url}")
     print(f"   Base URL: {base_url}")
     
     # Authentication priority logic:
@@ -61,27 +73,33 @@ try:
     if github_client_id and github_client_secret:
         # Production GitHub OAuth mode
         auth_mode = "github_oauth"
-        print("✅ GITHUB OAUTH MODE ENABLED")
-        print(f"   Callback URL: {base_url}/auth/github/callback")
-        print("   🔒 Production-grade authentication active")
+        print("[DEBUG] ✅ GITHUB OAUTH MODE ENABLED")
+        print(f"[DEBUG]    Callback URL: {base_url}/auth/github/callback")
+        print("[DEBUG]    🔒 Production-grade authentication active")
+        logger.info("✅ GITHUB OAUTH MODE ENABLED")
+        logger.info(f"   Callback URL: {base_url}/auth/github/callback")
         # Note: Full GitHub OAuth provider would be implemented here
         
     elif simple_token:
         # Simple token mode (default for development)
         auth_mode = "simple_token"
-        print("✅ SIMPLE TOKEN MODE ENABLED (Development)")
-        print(f"   Token: {simple_token[:8]}...")
-        print("   🚀 Ready to use - no setup required!")
-        print("   💡 For production, configure GitHub OAuth (see SECURITY.md)")
+        print("[DEBUG] ✅ SIMPLE TOKEN MODE ENABLED (Development)")
+        print(f"[DEBUG]    Token: {simple_token[:8]}...")
+        print("[DEBUG]    🚀 Ready to use - no setup required!")
+        print("[DEBUG]    💡 For production, configure GitHub OAuth (see SECURITY.md)")
+        logger.info("✅ SIMPLE TOKEN MODE ENABLED (Development)")
+        logger.info(f"   Token: {simple_token[:8]}...")
         
     else:
         # No authentication
         auth_mode = "none"
-        print("⚠️  NO AUTHENTICATION - All requests accepted")
-        print("   To enable auth: Set MCP_AUTH_TOKEN in .env.oauth")
+        print("[DEBUG] ⚠️  NO AUTHENTICATION - All requests accepted")
+        print("[DEBUG]    To enable auth: Set MCP_AUTH_TOKEN in .env.oauth")
+        logger.warning("⚠️  NO AUTHENTICATION - All requests accepted")
         
 except ImportError as e:
-    print(f"❌ OAuth dependencies not available: {e}")
+    print(f"[DEBUG] ❌ OAuth dependencies not available: {e}")
+    logger.error(f"❌ OAuth dependencies not available: {e}")
     auth_provider = None
     auth_mode = "none"
     simple_token = None
@@ -92,14 +110,25 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
 # ✅ Initialize MCP tool server with layered authentication
-print("\n🚀 Initializing MCP Server...")
+print("\n[DEBUG] 🚀 Initializing MCP Server...")
+logger.info("🚀 Initializing MCP Server...")
 port = int(os.getenv("PORT", 8080))
-print(f"🔧 DEBUG: Using port {port} from environment variable PORT={os.getenv('PORT', '8080')}")
-mcp = FastMCP("BankingTools", host="0.0.0.0", port=port)
+print(f"[DEBUG] 🔧 Using port {port} from environment variable PORT={os.getenv('PORT', '8080')}")
+logger.info(f"🔧 Using port {port} from environment variable PORT={os.getenv('PORT', '8080')}")
+
+try:
+    mcp = FastMCP("BankingTools", host="0.0.0.0", port=port)
+    print(f"[DEBUG] ✅ FastMCP server created successfully on host=0.0.0.0, port={port}")
+    logger.info(f"✅ FastMCP server created successfully on host=0.0.0.0, port={port}")
+except Exception as e:
+    print(f"[DEBUG] ❌ Failed to create FastMCP server: {e}")
+    logger.error(f"❌ Failed to create FastMCP server: {e}")
+    raise
 
 if auth_mode == "github_oauth":
-    print("✅ Banking Tools MCP server initialized with GitHub OAuth")
-    print("🔐 PRODUCTION AUTHENTICATION: GitHub OAuth enabled")
+    print("[DEBUG] ✅ Banking Tools MCP server initialized with GitHub OAuth")
+    print("[DEBUG] 🔐 PRODUCTION AUTHENTICATION: GitHub OAuth enabled")
+    logger.info("✅ Banking Tools MCP server initialized with GitHub OAuth")
 elif auth_mode == "simple_token":
     print("✅ Banking Tools MCP server initialized with Simple Token Auth")
     print("🔐 DEVELOPMENT AUTHENTICATION: Bearer token required")
@@ -154,9 +183,19 @@ def create_agent_transfer(agent_name: str):
         )
 
 # Register agent transfer tools
+print("[DEBUG] 🔧 Registering agent transfer tools...")
+logger.info("🔧 Registering agent transfer tools...")
 create_agent_transfer("sales_agent")
+print("[DEBUG] ✅ Registered transfer_to_sales_agent")
+logger.info("✅ Registered transfer_to_sales_agent")
+
 create_agent_transfer("customer_support_agent")
+print("[DEBUG] ✅ Registered transfer_to_customer_support_agent")
+logger.info("✅ Registered transfer_to_customer_support_agent")
+
 create_agent_transfer("transactions_agent")
+print("[DEBUG] ✅ Registered transfer_to_transactions_agent")
+logger.info("✅ Registered transfer_to_transactions_agent")
 
 ##### Sales agent tools #####
 
@@ -528,18 +567,36 @@ def server_info() -> Dict[str, Any]:
 
 # ✅ Entry point for streamable HTTP server
 if __name__ == "__main__":
-    print("Starting Banking Tools MCP server...")
+    print("[DEBUG] 🚀 Starting Banking Tools MCP server...")
+    logger.info("🚀 Starting Banking Tools MCP server...")
+    
+    # List all registered tools
+    try:
+        tools = mcp._tools if hasattr(mcp, '_tools') else {}
+        print(f"[DEBUG] 📋 Total tools registered: {len(tools)}")
+        logger.info(f"📋 Total tools registered: {len(tools)}")
+        
+        for tool_name, tool_func in tools.items():
+            print(f"[DEBUG]   - {tool_name}")
+            logger.info(f"   - {tool_name}")
+    except Exception as e:
+        print(f"[DEBUG] ⚠️  Could not list tools: {e}")
+        logger.warning(f"Could not list tools: {e}")
     
     # Configure server options
     server_options = {
         "transport": "streamable-http"
     }
     
-    print("� Starting server without built-in authentication...")
-    print("💡 For OAuth, use a reverse proxy like nginx or API gateway")
+    print("[DEBUG] 🔧 Starting server without built-in authentication...")
+    print("[DEBUG] 💡 For OAuth, use a reverse proxy like nginx or API gateway")
+    logger.info("🔧 Starting server without built-in authentication...")
     
     try:
+        print(f"[DEBUG] 🌐 Server starting on host=0.0.0.0, port={port}")
+        logger.info(f"🌐 Server starting on host=0.0.0.0, port={port}")
         mcp.run(**server_options)
     except Exception as e:
-        print(f"❌ Failed to start server: {e}")
+        print(f"[DEBUG] ❌ Failed to start server: {e}")
+        logger.error(f"❌ Failed to start server: {e}")
         sys.exit(1)
