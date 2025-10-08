@@ -52,7 +52,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
     BrowserModule,
     NgIf,
     MatIconModule,
-    RouterModule.forRoot(appRoutes),
+    RouterModule.forRoot(appRoutes, { useHash: false }),
     MatSidenavModule,
     MatSidenavModule,
     MatListModule,
