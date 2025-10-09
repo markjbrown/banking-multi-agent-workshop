@@ -861,58 +861,45 @@ You should see output like:
 
 ### 3. Interact with Banking Tools
 
-**Essential VS Code MCP Commands:**
+The MCP tools are accessible through GitHub Copilot Chat in VS Code:
 
-1. **List Available Tools**:
-   - `Ctrl+Shift+P` → Type: `MCP: List Tools`
-   - This shows all banking tools from your server
+1. **Open Copilot Chat**:
+   - Press `Ctrl+Shift+I` or click the chat icon in the sidebar
 
-2. **Call Individual Tools**:
-   - `Ctrl+Shift+P` → Type: `MCP: Call Tool`
-   - Select a tool from the list (e.g., `get_branch_location`, `server_info`)
-   - Enter required parameters when prompted
-
-3. **Manage MCP Servers**:
-   - `Ctrl+Shift+P` → Type: `MCP: Remove Server` (to disconnect)
-   - `Ctrl+Shift+P` → Type: `MCP: Refresh Servers` (to reload)
-
-### 4. Example Interactions
-
-**Test Branch Locations:**
-
-- Tool: `get_branch_location`
-- Parameter: `state = "California"`
-- Expected Result: List of bank branches in California counties
-
-**Test Server Info:**
-
-- Tool: `server_info` 
-- Parameters: (none required)
-- Expected Result: MCP server information and status
-
-**Test Account Tools:**
-
-- Tool: `bank_balance`
-- Parameters: Provide account number, tenant ID, user ID, thread ID
-- Expected Result: Account balance information
+2. **Ask Natural Language Questions**:
+   ```
+   "What banking tools are available?"
+   "Check the balance for account 12345 for contoso tenant and mark user"
+   ```
 
 ### 6. Debugging Tips
 
-If you encounter issues:
+If you encounter issues with MCP tools:
 
+**Server-side Debugging:**
 - **Check MCP server logs** in your terminal for authentication or connection errors
-- **Verify the URL** in `mcp.json` matches your server (including `/mcp/` path)
-- **Restart VS Code** after making changes to `mcp.json`
-- **Check authentication** - ensure your server is running in simple token mode
+- **Verify server is running** at `http://localhost:8080` - check `/docs` endpoint
+- **Test endpoints directly** using curl or browser to verify tool functionality
+
+**Client-side Debugging:**
+- **Check Copilot Chat connection** - ensure it can access the MCP server
+- **Verify API endpoints** - test `http://localhost:63280/docs` for the banking API
+- **Check terminal output** for banking_agents_api.py for MCP connection errors
+- **Test the web application** at `http://localhost:4200` as an alternative interface
+
+**Common Issues:**
+- **Port conflicts**: Ensure ports 8080 (MCP) and 63280 (Banking API) are available
+- **Authentication errors**: Check if MCP server is running in no-auth mode locally
+- **Tool loading failures**: Verify MCP client can connect to server during startup
 
 ### 7. Understanding MCP Client-Server Interaction
 
 This hands-on experience helps you understand:
 
-- **Protocol Communication**: How MCP clients discover and call tools
-- **Authentication Flow**: Bearer token authentication in action
-- **Tool Discovery**: Dynamic tool loading from the server
-- **Error Handling**: How MCP handles connection and execution errors
+- **Protocol Communication**: How MCP clients discover and call tools via JSON-RPC
+- **Tool Discovery**: Dynamic tool loading from the MCP server at runtime  
+- **Error Handling**: How MCP handles connection and execution errors gracefully
+- **Multiple Interfaces**: How the same MCP tools can be accessed via Copilot Chat, direct API, or web UI
 
 This VS Code MCP client interaction gives you insight into how your banking application connects to the MCP server, just through a different client interface.
 
