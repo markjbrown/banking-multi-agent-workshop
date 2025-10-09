@@ -99,7 +99,7 @@ class BankAccount(BaseModel):
     accountType: AccountType
     cardNumber: Optional[int] = None
     accountStatus: Optional[AccountStatus] = None
-    cardType: Optional[CardType] = None
+    cardType: Optional[int] = None  # Will contain frontend enum values (1=Visa, 2=MasterCard, etc.)
     balance: Optional[int] = None
     limit: Optional[int] = None
     interestRate: Optional[int] = None
@@ -665,9 +665,26 @@ def get_user_accounts(tenantId: str, userId: str):
                 except (ValueError, TypeError):
                     account_status = None
                 
-                # Card type with fallback  
+                # Card type with fallback - handle string values from data
+                card_brand = None
                 try:
                     card_type_value = account_data.get("cardType")
+                    if isinstance(card_type_value, str):
+                        # Map string card types to frontend enum values
+                        string_to_enum = {
+                            "visa": 1,
+                            "mastercard": 2, 
+                            "americanexpress": 3,
+                            "amex": 3,
+                            "discover": 4,
+                            "unionpay": 5,
+                            "jcb": 6,
+                            "maestro": 7,
+                            "cirrus": 8
+                        }
+                        card_brand = string_to_enum.get(card_type_value.lower())
+                    elif isinstance(card_type_value, int):
+                        card_brand = card_type_value
                     card_type = CardType(int(card_type_value)) if card_type_value is not None else None
                 except (ValueError, TypeError):
                     card_type = None
@@ -706,7 +723,7 @@ def get_user_accounts(tenantId: str, userId: str):
                     accountType=account_type,
                     cardNumber=card_number,
                     accountStatus=account_status,
-                    cardType=card_type,
+                    cardType=card_brand,  # Use mapped card_brand as cardType for frontend compatibility
                     balance=balance,
                     limit=limit,
                     interestRate=interest_rate,
