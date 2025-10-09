@@ -41,7 +41,7 @@ Key Features of the Checkpointer Plugin:
 
 Let's add the Checkpointer Plugin to our application.
 
-1. To begin, open the **banking_Agents.py** file.
+1. To begin, open the **banking_agents.py** file.
 1. Copy the code below to the top of the file with the other imports:
 
 ```python
