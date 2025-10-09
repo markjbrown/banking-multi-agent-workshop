@@ -230,6 +230,10 @@ class BankAccount(BaseModel):
     limit: Optional[int] = None
     interestRate: Optional[int] = None
     shortDescription: str
+    # Add frontend-expected fields
+    accountHolder: Optional[str] = None
+    accountNumber: Optional[str] = None
+    currency: str = "USD"
 
 
 class BankTransaction(BaseModel):
@@ -886,7 +890,11 @@ def get_user_accounts(tenantId: str, userId: str):
                     balance=balance,
                     limit=limit,
                     interestRate=interest_rate,
-                    shortDescription=short_description
+                    shortDescription=short_description,
+                    # Add frontend-expected fields
+                    accountHolder=userId,  # Use the userId as the account holder name
+                    accountNumber=account_data.get("accountId") or account_id,  # Use accountId or id as account number
+                    currency="USD"  # Default currency
                 )
                 accounts.append(account)
                 
@@ -899,7 +907,11 @@ def get_user_accounts(tenantId: str, userId: str):
                     tenantId=account_data.get("tenantId", tenantId),
                     name=account_data.get("name") or "Unknown Account",
                     accountType=AccountType.CHECKING,
-                    shortDescription="Account data parsing failed"
+                    shortDescription="Account data parsing failed",
+                    # Add frontend-expected fields
+                    accountHolder=userId,
+                    accountNumber=account_data.get("accountId") or account_data.get("id") or "unknown",
+                    currency="USD"
                 )
                 accounts.append(minimal_account)
             
