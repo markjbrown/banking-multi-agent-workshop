@@ -38,17 +38,17 @@ Complete the following tasks in order to prepare your environment for this works
 - Azure subscription with **owner rights**
 - Subscription access to Azure OpenAI service. Start here to [Request Access to Azure OpenAI Service](https://aka.ms/oaiapply). If you have access, see below for ensuring enough quota to deploy.
 
-  #### Checking Azure OpenAI quota limits
+   #### Checking Azure OpenAI quota limits
 
-  For this sample to deploy successfully, there needs to be enough Azure OpenAI quota for the models used by this sample within your subscription. This sample deploys a new Azure OpenAI account with two models, **gpt-4.1-mini with 30K tokens** per minute and **text-3-large with 5k tokens** per minute. For more information on how to check your model quota and change it, see [Manage Azure OpenAI Service Quota](https://learn.microsoft.com/azure/ai-services/openai/how-to/quota)
+   For this sample to deploy successfully, there needs to be enough Azure OpenAI quota for the models used by this sample within your subscription. This sample deploys a new Azure OpenAI account with two models, **gpt-4.1-mini with 30K tokens** per minute and **text-3-large with 5k tokens** per minute. For more information on how to check your model quota and change it, see [Manage Azure OpenAI Service Quota](https://learn.microsoft.com/azure/ai-services/openai/how-to/quota)
 
-  #### Azure Subscription Permission Requirements
+   #### Azure Subscription Permission Requirements
 
-  This solution deploys a [user-assigned managed identity](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview) and defines then applies Azure Cosmos DB and Azure OpenAI RBAC permissions to this as well as your own Service Principal Id. You will need the following Azure RBAC roles assigned to your identity in your Azure subscription or [Subscription Owner](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged#owner) access which will give you both of the following.
+   This solution deploys a [user-assigned managed identity](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview) and defines then applies Azure Cosmos DB and Azure OpenAI RBAC permissions to this as well as your own Service Principal Id. You will need the following Azure RBAC roles assigned to your identity in your Azure subscription or [Subscription Owner](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged#owner) access which will give you both of the following.
 
-  - [Manged Identity Contributor](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/identity#managed-identity-contributor)
-  - [Cosmos DB Operator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/databases#cosmos-db-operator)
-  - [Cognitive Services OpenAI User](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning#cognitive-services-openai-user)
+   - [Manged Identity Contributor](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/identity#managed-identity-contributor)
+   - [Cosmos DB Operator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/databases#cosmos-db-operator)
+   - [Cognitive Services OpenAI User](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning#cognitive-services-openai-user)
 
 ### Get Started
 
@@ -88,7 +88,7 @@ You can run this sample app and workshop virtually by using GitHub Codespaces. T
 #### Local Environment without VS Code Dev Containers
 
 > :warning: **NOTE**
-> For the MCP parts of the workshop in module 6 to function properly, you must be running in a Linux environment. If you are on Windows, consider installing WSL, switching to dev containers or running in Codespaces.
+> For the MCP parts of the workshop in module 5 to function properly, you must be running in a Linux environment. If you are on Windows, consider installing WSL, switching to dev containers or running in Codespaces.
 
 1. To run the workshop locally on your machine, install the following:
 
@@ -98,6 +98,9 @@ You can run this sample app and workshop virtually by using GitHub Codespaces. T
    - [Python 3.12+](https://www.python.org/downloads/)
    - Your Python IDE or [VS Code](https://code.visualstudio.com/Download) with [Python Extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python)
    - To build and run the frontend component, install [Node.js](https://nodejs.org/en/download/) and [Angular CLI](https://angular.dev/installation#install-angular-cli)
+
+
+   ⚠️ To complete the deployment from WSL into Azure you must first install PowerShell and Docker into WSL. You will also need to install the WSL extension into VS Code. You can then open a WSL session and type code . and follow the 
 
 2. Clone the repository and navigate to the folder:
 
@@ -160,6 +163,15 @@ Do you want to add some dummy data for testing? (yes/no): y
 ```
 
 1. Press `y` to load the data for the workshop.
+
+1. Press `y` to deploy the front end for the workshop.
+
+⚠️ You may run into errors trying to deploy the web app from WSL. If so, modify your DNS to use public DNS server.
+
+```shell
+sudo cp /etc/resolv.conf /etc/resolv.conf.backup
+echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+```
 
 ## Activity 3: Workshop Structure and Overview Session
 
@@ -224,6 +236,7 @@ The API will be available at `http://localhost:63280/docs`. This has been pre-bu
    ```
 
 1. Open your browser and navigate to <http://localhost:4200/>.
+
 
 #### Run the Frontend App on Codespaces
 
