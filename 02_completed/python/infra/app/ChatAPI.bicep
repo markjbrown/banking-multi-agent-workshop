@@ -33,7 +33,7 @@ module fetchLatestImage '../modules/fetch-container-image.bicep' = {
 resource chatservicewebapi 'Microsoft.App/containerApps@2024-02-02-preview' = {
   name: name
   location: location
-  tags: union(tags, {'azd-service-name': 'ChatServiceWebApi' })
+  tags: union(tags, {'azd-service-name': 'B_ChatServiceWebApi' })
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: { '${identity.id}': {} }
@@ -89,15 +89,15 @@ resource chatservicewebapi 'Microsoft.App/containerApps@2024-02-02-preview' = {
 			  }
 			  {
 				name: 'MCP_CONNECTION_RETRY_ATTEMPTS'
-				value: '5'
+				value: '10'
 			  }
 			  {
 				name: 'MCP_CONNECTION_RETRY_DELAY'
-				value: '30'
+				value: '15'
 			  }
 			  {
 				name: 'STARTUP_DELAY_SECONDS'
-				value: '60'
+				value: '120'
 			  }
             ],
             envSettings
