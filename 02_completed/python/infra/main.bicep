@@ -304,7 +304,7 @@ module ChatAPI './app/ChatAPI.bicep' = {
   }
   scope: rg
   // Explicitly depend on MCP Server being fully deployed first
-  dependsOn: [mcpServer]
+  dependsOn: [mcpServer, cosmos, monitoring, openAi, AssignRoles, appsEnv, registry]
 }
 
 module webApp './app/webApp.bicep' = {

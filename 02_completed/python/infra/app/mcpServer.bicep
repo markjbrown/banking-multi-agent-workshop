@@ -24,7 +24,7 @@ module fetchLatestImage '../modules/fetch-container-image.bicep' = {
 resource app 'Microsoft.App/containerApps@2024-02-02-preview' = {
   name: name
   location: location
-  tags: union(tags, {'azd-service-name': 'MCPServer'})
+  tags: union(tags, {'azd-service-name': 'A_MCPServer'})
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: { '${identity.id}': {} }
@@ -80,7 +80,7 @@ resource app 'Microsoft.App/containerApps@2024-02-02-preview' = {
         }
       ]
       scale: {
-        minReplicas: 0
+        minReplicas: 1
         maxReplicas: 2
       }
     }

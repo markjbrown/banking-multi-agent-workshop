@@ -82,13 +82,13 @@ hooks:
           USE_REMOTE_MCP_SERVER=\"\"true\"\"
           " > ../.env
 services:
-    MCPServer:
+    A_MCPServer:
         project: ../../mcpserver
         host: containerapp
         language: python
         docker:
             path: ./Dockerfile
-    ChatServiceWebApi:
+    B_ChatServiceWebApi:
         project: ..
         host: containerapp
         language: python
